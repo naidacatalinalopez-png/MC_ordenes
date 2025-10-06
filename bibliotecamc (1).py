@@ -2,10 +2,13 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 
-# --- 1. CONFIGURACIÓN Y ESTADO INICIAL (Incluyendo Directorio Modificable) ---
+# =========================================================================
+# === 1. CONFIGURACIÓN Y ESTADO INICIAL ===
+# =========================================================================
 
-# Dependencias Fijas
+# Listas de Opciones Fijas
 DEPENDENCIAS = ["Electrico", "Infraestructura", "Biomedico", "Otro"]
+TIPOS_MANTENIMIENTO = ["Correctivo", "Preventivo", "Predictivo", "Inspección", "Instalación"] # <--- Definido aquí
 
 # Roles Fijos Iniciales
 COORDINADORES_INICIAL = ["Danna Hernandez"]
@@ -31,7 +34,9 @@ if 'siguiente_orden_numero' not in st.session_state:
 if 'siguiente_solicitud_numero' not in st.session_state:
     st.session_state.siguiente_solicitud_numero = 11
 
-# --- Funciones de Gestión de Órdenes ---
+# =========================================================================
+# === 2. FUNCIONES ===
+# =========================================================================
 
 def generar_solicitud_nro(current_num):
     """Genera el siguiente número de Solicitud (Ej: 09-11)"""
@@ -49,30 +54,28 @@ def convert_df_to_csv(df):
     """Convierte el DataFrame (historial) a formato CSV para la descarga."""
     return df.to_csv(index=False).encode('utf-8')
 
-# --- Funciones de Gestión de Personal ---
-
 def agregar_personal(rol, nombre):
     """Agrega un nombre al directorio de personal para un rol específico."""
     if nombre and rol:
         if nombre not in st.session_state.directorio_personal[rol]:
             st.session_state.directorio_personal[rol].append(nombre)
-            # Reordenar alfabéticamente para mejor visualización
             st.session_state.directorio_personal[rol].sort()
             st.success(f"➕ **{nombre}** agregado a la lista de **{rol}**.")
         else:
             st.warning(f"⚠️ **{nombre}** ya existe en la lista de **{rol}**.")
-    
-# --- Interfaz de la Aplicación Streamlit ---
+
+# =========================================================================
+# === 3. INTERFAZ DE LA APLICACIÓN (PESTAÑAS) ===
+# =========================================================================
 
 st.title("Sistema Automatizado de Órdenes de Mantenimiento 🛠️")
 st.markdown("---")
 
-# Crea las pestañas de navegación
 tab_orden, tab_historial, tab_personal = st.tabs(["📝 Nueva Orden", "📊 Historial y Descarga", "🧑‍💻 Gestión de Personal"])
 
-# =========================================================================
+# -------------------------------------------------------------------------
 # === PESTAÑA 1: NUEVA ORDEN DE MANTENIMIENTO ===
-# =========================================================================
+# -------------------------------------------------------------------------
 with tab_orden:
     
     # Obtiene los números de orden actuales
@@ -96,11 +99,11 @@ with tab_orden:
                                     placeholder="Ej: Se solicita una lámpara de sobreponer de 18w, para el servicio de Optometría.", 
                                     max_chars=500)
         
-        tipo_mant = st.selectbox("Tipo de Mantenimiento", options=TIPOS_MANTENIMIENTO)
+        # EL ERROR ESTABA AQUÍ SI LA VARIABLE NO SE DEFINÍA ANTES DEL FORMULARIO
+        tipo_mant = st.selectbox("Tipo de Mantenimiento", options=TIPOS_MANTENIMIENTO) 
 
         # --- Campos de Coordinación ---
         st.markdown("### Coordinación del Trabajo")
-        # Usamos filter para asegurar que solo Danna y Hery aparezcan en sus roles fijos, si están en el directorio
         
         coordinadoras_disponibles = [p for p in st.session_state.directorio_personal["Reviso"] if p in COORDINADORES_INICIAL]
         biomedicos_disponibles = [p for p in st.session_state.directorio_personal["Reviso"] if p in BIOMEDICOS_INICIAL]
@@ -116,7 +119,6 @@ with tab_orden:
         
         materiales = []
         
-        # Lógica de Ítems (Mismo código para agregar 3 ítems)
         for i in range(1, 4):
             st.markdown(f"**Ítem {i}:**")
             col_m1, col_m2, col_m3 = st.columns(3)
@@ -145,6 +147,7 @@ with tab_orden:
 
         st.markdown("---")
         
+        # EL BOTÓN SUBMIT DEBE ESTAR DENTRO DEL FORMULARIO
         submit_button = st.form_submit_button(label='Guardar Orden y Generar Siguiente Consecutivo')
 
         if submit_button:
@@ -167,9 +170,9 @@ with tab_orden:
                 }
                 guardar_orden(nueva_orden)
 
-# =========================================================================
+# -------------------------------------------------------------------------
 # === PESTAÑA 2: HISTORIAL Y DESCARGA ===
-# =========================================================================
+# -------------------------------------------------------------------------
 with tab_historial:
     st.header("Historial de Órdenes Guardadas")
     
@@ -177,7 +180,7 @@ with tab_historial:
         df = pd.DataFrame(st.session_state.orden_data)
         st.dataframe(df, use_container_width=True)
         
-        # --- Opción de Descarga (CSV) ---
+        # Opción de Descarga (CSV)
         csv = convert_df_to_csv(df)
         
         st.download_button(
@@ -190,12 +193,12 @@ with tab_historial:
         st.info("Aún no hay órdenes de mantenimiento registradas en esta sesión.")
 
 
-# =========================================================================
+# -------------------------------------------------------------------------
 # === PESTAÑA 3: GESTIÓN DE PERSONAL ===
-# =========================================================================
+# -------------------------------------------------------------------------
 with tab_personal:
     st.header("Administración de Personal y Firmantes")
-    st.info("Utiliza esta sección para agregar nuevos nombres a las listas de firmantes (Elaboró, Revisó, Aprobó).")
+    st.info("Utiliza esta sección para **agregar nuevos nombres** a las listas de firmantes (Elaboró, Revisó, Aprobó).")
     
     # Formulario para Agregar Personal
     with st.form("form_agregar_personal"):
@@ -220,7 +223,6 @@ with tab_personal:
     # Visualización del Directorio Actual
     st.subheader("Directorio de Firmantes Actual")
     
-    # Crear un DataFrame para mostrar el directorio de forma ordenada
     data_mostrar = []
     for rol, personas in st.session_state.directorio_personal.items():
         for persona in personas:
