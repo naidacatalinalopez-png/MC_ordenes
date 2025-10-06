@@ -2,23 +2,25 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import io
+import base64
 
 # =========================================================================
 # === 1. CONFIGURACIÓN Y ESTADO INICIAL ===
 # =========================================================================
 
+# URL del Logo proporcionada por el usuario
+LOGO_URL = "https://yt3.googleusercontent.com/ytc/AIdro_mbSWHDUC7Kw_vwBstPvA2M0-SynIdMOdiq1oLmPP6RAGw=s900-c-k-c0x00ffffff-no-rj"
+
 # Listas de Opciones Fijas
 DEPENDENCIAS = ["Electrico", "Infraestructura", "Biomedico", "Otro"]
 TIPOS_MANTENIMIENTO = ["Correctivo", "Preventivo", "Predictivo", "Inspección", "Instalación"]
 
-# Lista de Servicios Adicionales (NUEVO)
 SERVICIOS_SOLICITUD = [
     "UCI ADULTOS", "PEDIATRIA", "GINECOLOGIA", "CALL CENTER", 
     "CONSULTA EXTERNA", "APS", "UCI NEONATAL", "UCI INTERMEDIA", 
     "CIRUGIA", "HOSPITALIZACION", "URGENCIAS", "ODONTOLOGÍA", 
     "FISIOTERAPIA", "P Y P", "LABORATORIO", "GASTROENTEROLOGÍA", "OTRO"
 ]
-
 
 # Directorio de Trabajadores/Firmantes INICIAL
 DIRECTORIO_TRABAJADORES_INICIAL = {
@@ -27,7 +29,7 @@ DIRECTORIO_TRABAJADORES_INICIAL = {
     "Aprobo": ["Gerente de Operaciones - Gerente", "Jefe de Almacén - Logística"]
 }
 
-# Inicializar el estado de la sesión para persistencia de datos (mientras la app está abierta)
+# Inicializar el estado de la sesión
 if 'orden_data' not in st.session_state:
     st.session_state.orden_data = []
 
@@ -41,15 +43,13 @@ if 'siguiente_solicitud_numero' not in st.session_state:
     st.session_state.siguiente_solicitud_numero = 11
 
 # =========================================================================
-# === 2. FUNCIONES ===
+# === 2. FUNCIONES DE LÓGICA Y DESCARGA ===
 # =========================================================================
 
 def generar_solicitud_nro(current_num):
-    """Genera el siguiente número de Solicitud (Ej: 09-11)"""
     return f"09-{current_num:02d}"
 
 def guardar_orden(nueva_orden):
-    """Añade la nueva orden al registro y actualiza los números consecutivos."""
     st.session_state.orden_data.append(nueva_orden)
     st.session_state.siguiente_orden_numero += 1
     st.session_state.siguiente_solicitud_numero += 1
@@ -57,11 +57,9 @@ def guardar_orden(nueva_orden):
 
 @st.cache_data
 def convert_df_to_csv(df):
-    """Convierte el DataFrame (historial) a formato CSV para la descarga."""
     return df.to_csv(index=False).encode('utf-8')
 
 def agregar_personal(rol, nombre, profesion):
-    """Agrega un nombre y profesión al directorio de personal para un rol específico."""
     nombre_completo = f"{nombre} - {profesion}"
     if nombre_completo and rol:
         if nombre_completo not in st.session_state.directorio_personal[rol]:
@@ -70,6 +68,85 @@ def agregar_personal(rol, nombre, profesion):
             st.success(f"➕ **{nombre_completo}** agregado a la lista de **{rol}**.")
         else:
             st.warning(f"⚠️ **{nombre_completo}** ya existe en la lista de **{rol}**.")
+
+def generar_html_orden(orden):
+    """Genera una página HTML estructurada para la impresión a PDF, incluyendo el logo."""
+    
+    materiales_html = ""
+    for item in orden['Materiales Solicitados'].split('; '):
+        materiales_html += f"<tr><td>{item.split('(')[0].strip()}</td><td></td><td>{item.split('(')[1].replace(')', '')}</td></tr>"
+
+    html_content = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Orden de Mantenimiento N° {orden['Número de Orden']}</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; font-size: 10pt; padding: 20px; }}
+            .header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }}
+            .header img {{ max-width: 100px; height: auto; border-radius: 50%; }}
+            .header-info {{ text-align: right; }}
+            h2 {{ color: #333; margin-top: 5px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
+            th {{ background-color: #f2f2f2; }}
+            .signature-area {{ display: flex; justify-content: space-around; margin-top: 40px; text-align: center; }}
+            .signature-box {{ width: 30%; border-top: 1px solid #000; padding-top: 5px; }}
+        </style>
+    </head>
+    <body>
+
+        <div class="header">
+            <img src="{LOGO_URL}" alt="Logo del Hospital">
+            <div class="header-info">
+                <h2>HOSPITAL REGIONAL ALFONSO JARAMILLO SALAZAR</h2>
+                <strong>ORDEN DE MANTENIMIENTO</strong><br>
+                Código: GTAF-A-05-P-EEC-FPA-01
+            </div>
+        </div>
+
+        <h3>DATOS DE LA ORDEN</h3>
+        <table>
+            <tr><th>Número de Orden</th><td>{orden['Número de Orden']}</td><th>Fecha</th><td>{orden['Fecha']}</td></tr>
+            <tr><th>Solicitud N°</th><td>{orden['Solicitud N°']}</td><th>Dependencia Solicitante</th><td>{orden['Dependencia Solicitante']}</td></tr>
+            <tr><th>Servicio Aplicado</th><td colspan="3">{orden['Servicio Aplicado']}</td></tr>
+            <tr><th>Tipo de Mantenimiento</th><td colspan="3">{orden['Tipo de Mantenimiento']}</td></tr>
+        </table>
+        
+        <h3>MOTIVO Y RESPONSABLE</h3>
+        <table>
+            <tr><th>Motivo</th><td colspan="3">{orden['Motivo']}</td></tr>
+            <tr><th>Responsable Designado</th><td colspan="3">{orden['Responsable Designado']}</td></tr>
+        </table>
+
+        <h3>MATERIALES SOLICITADOS</h3>
+        <table>
+            <tr><th>DETALLE</th><th>VALOR UNITARIO</th><th>CANTIDAD Y UNIDAD</th></tr>
+            {materiales_html}
+        </table>
+
+        <div class="signature-area">
+            <div class="signature-box">
+                {orden['Elaboró']}<br>
+                Elaboró
+            </div>
+            <div class="signature-box">
+                {orden['Revisó']}<br>
+                Revisó
+            </div>
+            <div class="signature-box">
+                {orden['Aprobó']}<br>
+                Aprobó
+            </div>
+        </div>
+        <p style="margin-top: 50px;">Recibido por: ___________________________________ C.C.: ______________________</p>
+    </body>
+    </html>
+    """
+    # Codificar el HTML para incrustarlo en un enlace data URI
+    b64_html = base64.b64encode(html_content.encode('utf-8')).decode()
+    return f'<a href="data:text/html;base64,{b64_html}" target="_blank" style="text-decoration: none; padding: 10px; background-color: #4CAF50; color: white; border-radius: 5px;">📄 Abrir Orden para Imprimir a PDF</a>'
+
 
 # =========================================================================
 # === 3. INTERFAZ DE LA APLICACIÓN (PESTAÑAS) ===
@@ -87,6 +164,8 @@ with tab_orden:
     
     orden_actual = st.session_state.siguiente_orden_numero
     solicitud_actual = generar_solicitud_nro(st.session_state.siguiente_solicitud_numero)
+    
+    orden_guardada_recientemente = False
 
     with st.form(key='orden_form'):
         st.subheader(f"Nueva Orden de Trabajo N°: {orden_actual}")
@@ -100,23 +179,19 @@ with tab_orden:
         with col3:
             dependencia_selected = st.selectbox("Dependencia Solicitante", options=DEPENDENCIAS)
 
-        # --- Campo de Servicio (NUEVO) ---
         servicio_solicitud = st.selectbox(
             "Servicio al que Aplica la Solicitud", 
             options=SERVICIOS_SOLICITUD
         )
 
-        # --- Motivo y Tipo de Mantenimiento ---
         motivo_orden = st.text_area("Motivo de la Orden (Descripción del trabajo/falla)", 
                                     placeholder=f"Ej: Se solicita una lámpara de sobreponer de 18w, para el servicio de {servicio_solicitud}...", 
                                     max_chars=500)
         
         tipo_mant = st.selectbox("Tipo de Mantenimiento", options=TIPOS_MANTENIMIENTO) 
 
-        # --- Campo de Responsable (Simplificado y Flexible) ---
+        # --- Campo de Responsable (Flexible) ---
         st.markdown("### Responsable Designado")
-        
-        # Combina las listas de 'Elaboro' y 'Revisó' para dar flexibilidad
         opciones_responsable = st.session_state.directorio_personal["Elaboro"] + st.session_state.directorio_personal["Reviso"]
         
         responsable_designado = st.selectbox(
@@ -127,10 +202,9 @@ with tab_orden:
         
         # --- Solicitud de Materiales (Máx. 3 Ítems) ---
         st.markdown("### Solicitud de Materiales (Máx. 3 Ítems)")
-        
         materiales = []
-        
         for i in range(1, 4):
+            # ... (código de materiales, se mantiene igual)
             st.markdown(f"**Ítem {i}:**")
             col_m1, col_m2, col_m3 = st.columns(3)
             with col_m1:
@@ -147,14 +221,13 @@ with tab_orden:
 
         # --- Firmas/Roles de Flujo ---
         st.subheader("Personal de Flujo y Firmas")
-        
         col_e, col_r, col_a = st.columns(3)
         with col_e:
             elaboro = st.selectbox("Elaboró", options=st.session_state.directorio_personal["Elaboro"])
         with col_r:
             reviso = st.selectbox("Revisó", options=st.session_state.directorio_personal["Reviso"])
         with col_a:
-            aprobo = st.selectbox("Aprobó", options=st.session_state.directorio_personal["Aprobo"])
+            aprobo = st.selectbox("Aprobó", options=st.session_state.directorio_personal["Aprobó"])
 
         st.markdown("---")
         
@@ -169,7 +242,7 @@ with tab_orden:
                     "Solicitud N°": solicitud_actual,
                     "Fecha": fecha_actual,
                     "Dependencia Solicitante": dependencia_selected,
-                    "Servicio Aplicado": servicio_solicitud, # NUEVO CAMPO
+                    "Servicio Aplicado": servicio_solicitud,
                     "Responsable Designado": responsable_designado,
                     "Motivo": motivo_orden,
                     "Tipo de Mantenimiento": tipo_mant,
@@ -179,6 +252,22 @@ with tab_orden:
                     "Aprobó": aprobo
                 }
                 guardar_orden(nueva_orden)
+                # Guardamos la orden recién creada para el botón de PDF
+                st.session_state.ultima_orden_guardada = nueva_orden
+                orden_guardada_recientemente = True
+
+    # Botón para descargar/imprimir la última orden guardada
+    if st.session_state.get('ultima_orden_guardada') and orden_guardada_recientemente:
+        st.markdown("---")
+        st.subheader(f"Orden #{st.session_state.ultima_orden_guardada['Número de Orden']} lista para imprimir:")
+        
+        # Insertar el HTML como markdown, permitiendo la interacción
+        st.markdown(
+            generar_html_orden(st.session_state.ultima_orden_guardada), 
+            unsafe_allow_html=True
+        )
+        st.info("Presiona el botón para abrir la orden. Luego usa CTRL+P o 'Imprimir' y selecciona 'Guardar como PDF' en tu navegador.")
+
 
 # -------------------------------------------------------------------------
 # === PESTAÑA 2: HISTORIAL Y DESCARGA ===
@@ -198,19 +287,6 @@ with tab_historial:
             file_name=f'Ordenes_Mantenimiento_{date.today().strftime("%Y%m%d")}.csv',
             mime='text/csv',
         )
-
-        st.markdown("---")
-        st.subheader("Descarga para Impresión")
-        st.info("Para obtener un PDF, descarga el archivo TXT y usa la función de 'Imprimir a PDF' de tu sistema operativo o navegador.")
-        
-        # Descarga en formato TXT estructurado (para copiar/imprimir a PDF)
-        markdown_data = df.to_markdown(index=False)
-        st.download_button(
-            label="⬇️ Descargar para Imprimir (TXT/Markdown)",
-            data=markdown_data,
-            file_name=f'Ordenes_Mantenimiento_Imprimir_{date.today().strftime("%Y%m%d")}.txt',
-            mime='text/plain',
-        )
         
     else:
         st.info("Aún no hay órdenes de mantenimiento registradas en esta sesión.")
@@ -221,9 +297,9 @@ with tab_historial:
 # -------------------------------------------------------------------------
 with tab_personal:
     st.header("Administración de Personal y Firmantes")
+    # ... (código de gestión de personal, se mantiene igual)
     st.info("Ingresa el Nombre y la Profesión/Cargo. El sistema los combinará en la lista de selección.")
     
-    # Formulario para Agregar Personal
     with st.form("form_agregar_personal"):
         st.subheader("Agregar Nuevo Empleado/Firmante")
         
@@ -248,7 +324,6 @@ with tab_personal:
 
     st.markdown("---")
     
-    # Visualización del Directorio Actual
     st.subheader("Directorio de Firmantes Actual (Nombre - Profesión/Cargo)")
     
     data_mostrar = []
