@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
+import io
 
 # =========================================================================
 # === 1. CONFIGURACIÓN Y ESTADO INICIAL ===
@@ -8,17 +9,14 @@ from datetime import date
 
 # Listas de Opciones Fijas
 DEPENDENCIAS = ["Electrico", "Infraestructura", "Biomedico", "Otro"]
-TIPOS_MANTENIMIENTO = ["Correctivo", "Preventivo", "Predictivo", "Inspección", "Instalación"] # <--- Definido aquí
+TIPOS_MANTENIMIENTO = ["Correctivo", "Preventivo", "Predictivo", "Inspección", "Instalación"]
 
-# Roles Fijos Iniciales
-COORDINADORES_INICIAL = ["Danna Hernandez"]
-BIOMEDICOS_INICIAL = ["Hery Peña"]
-
-# Directorio de Trabajadores/Firmantes INICIAL
+# Directorio de Trabajadores/Firmantes INICIAL (Formato: "Nombre - Profesión/Cargo")
 DIRECTORIO_TRABAJADORES_INICIAL = {
-    "Elaboro": ["Magaly Gómez", "Oscar Muñoz", "Técnico A", "Técnico B"],
-    "Reviso": COORDINADORES_INICIAL + BIOMEDICOS_INICIAL + ["Jefe de Mantenimiento"],
-    "Aprobo": ["Gerente de Operaciones", "Jefe de Almacén"]
+    "Elaboro": ["Magaly Gómez - Técnica", "Oscar Muñoz - Operario"],
+    # Se añade la profesión/cargo a Danna y Hery
+    "Reviso": ["Danna Hernandez - Coordinadora Mantenimiento", "Hery Peña - Biomédico", "Jefe de Mantenimiento - Ingeniería"],
+    "Aprobo": ["Gerente de Operaciones - Gerente", "Jefe de Almacén - Logística"]
 }
 
 # Inicializar el estado de la sesión para persistencia de datos (mientras la app está abierta)
@@ -54,15 +52,16 @@ def convert_df_to_csv(df):
     """Convierte el DataFrame (historial) a formato CSV para la descarga."""
     return df.to_csv(index=False).encode('utf-8')
 
-def agregar_personal(rol, nombre):
-    """Agrega un nombre al directorio de personal para un rol específico."""
-    if nombre and rol:
-        if nombre not in st.session_state.directorio_personal[rol]:
-            st.session_state.directorio_personal[rol].append(nombre)
+def agregar_personal(rol, nombre, profesion):
+    """Agrega un nombre y profesión al directorio de personal para un rol específico."""
+    nombre_completo = f"{nombre} - {profesion}"
+    if nombre_completo and rol:
+        if nombre_completo not in st.session_state.directorio_personal[rol]:
+            st.session_state.directorio_personal[rol].append(nombre_completo)
             st.session_state.directorio_personal[rol].sort()
-            st.success(f"➕ **{nombre}** agregado a la lista de **{rol}**.")
+            st.success(f"➕ **{nombre_completo}** agregado a la lista de **{rol}**.")
         else:
-            st.warning(f"⚠️ **{nombre}** ya existe en la lista de **{rol}**.")
+            st.warning(f"⚠️ **{nombre_completo}** ya existe en la lista de **{rol}**.")
 
 # =========================================================================
 # === 3. INTERFAZ DE LA APLICACIÓN (PESTAÑAS) ===
@@ -78,7 +77,6 @@ tab_orden, tab_historial, tab_personal = st.tabs(["📝 Nueva Orden", "📊 Hist
 # -------------------------------------------------------------------------
 with tab_orden:
     
-    # Obtiene los números de orden actuales
     orden_actual = st.session_state.siguiente_orden_numero
     solicitud_actual = generar_solicitud_nro(st.session_state.siguiente_solicitud_numero)
 
@@ -96,23 +94,20 @@ with tab_orden:
 
         # --- Motivo y Tipo de Mantenimiento ---
         motivo_orden = st.text_area("Motivo de la Orden (Descripción del trabajo/falla)", 
-                                    placeholder="Ej: Se solicita una lámpara de sobreponer de 18w, para el servicio de Optometría.", 
+                                    placeholder="Ej: Se solicita una lámpara de sobreponer de 18w...", 
                                     max_chars=500)
         
-        # EL ERROR ESTABA AQUÍ SI LA VARIABLE NO SE DEFINÍA ANTES DEL FORMULARIO
         tipo_mant = st.selectbox("Tipo de Mantenimiento", options=TIPOS_MANTENIMIENTO) 
 
-        # --- Campos de Coordinación ---
-        st.markdown("### Coordinación del Trabajo")
+        # --- Campo de Responsable (Simplificado) ---
+        st.markdown("### Coordinación y Responsable")
         
-        coordinadoras_disponibles = [p for p in st.session_state.directorio_personal["Reviso"] if p in COORDINADORES_INICIAL]
-        biomedicos_disponibles = [p for p in st.session_state.directorio_personal["Reviso"] if p in BIOMEDICOS_INICIAL]
-        
-        col_coord, col_biomed = st.columns(2)
-        with col_coord:
-            coordinadora_mant = st.selectbox("Coordinadora de Mantenimiento (Danna)", options=coordinadoras_disponibles)
-        with col_biomed:
-            biomedico_resp = st.selectbox("Biomédico Responsable (Hery)", options=biomedicos_disponibles)
+        # El campo de Responsable Designado ahora usa la lista 'Reviso'
+        responsable_designado = st.selectbox(
+            "Responsable Designado", 
+            options=st.session_state.directorio_personal["Reviso"],
+            help="Designa al Responsable del área (ej: Danna Hernández, Hery Peña, etc.)"
+        )
         
         # --- Solicitud de Materiales (Máx. 3 Ítems) ---
         st.markdown("### Solicitud de Materiales (Máx. 3 Ítems)")
@@ -134,7 +129,7 @@ with tab_orden:
 
         st.markdown("---")
 
-        # --- Firmas/Responsables (Usa el Directorio Modificable) ---
+        # --- Firmas/Responsables (Usa el Directorio con Profesión) ---
         st.subheader("Personal que Realiza/Firma")
         
         col_e, col_r, col_a = st.columns(3)
@@ -147,7 +142,6 @@ with tab_orden:
 
         st.markdown("---")
         
-        # EL BOTÓN SUBMIT DEBE ESTAR DENTRO DEL FORMULARIO
         submit_button = st.form_submit_button(label='Guardar Orden y Generar Siguiente Consecutivo')
 
         if submit_button:
@@ -159,8 +153,7 @@ with tab_orden:
                     "Solicitud N°": solicitud_actual,
                     "Fecha": fecha_actual,
                     "Dependencia": dependencia_selected,
-                    "Coordinadora Mantenimiento": coordinadora_mant,
-                    "Biomédico Resp.": biomedico_resp,
+                    "Responsable Designado": responsable_designado,
                     "Motivo": motivo_orden,
                     "Tipo de Mantenimiento": tipo_mant,
                     "Materiales Solicitados": "; ".join(materiales),
@@ -184,11 +177,26 @@ with tab_historial:
         csv = convert_df_to_csv(df)
         
         st.download_button(
-            label="⬇️ Descargar Historial Completo (CSV)",
+            label="⬇️ Descargar Historial (CSV)",
             data=csv,
             file_name=f'Ordenes_Mantenimiento_{date.today().strftime("%Y%m%d")}.csv',
             mime='text/csv',
         )
+
+        st.markdown("---")
+        st.subheader("Descarga para Impresión (Imprimir a PDF)")
+        st.warning("La generación directa de PDF estructurados requiere librerías externas. Usa el CSV para datos.")
+        
+        # Opción de descarga en formato TXT estructurado (para copiar/imprimir a PDF)
+        markdown_data = df.to_markdown(index=False)
+        st.download_button(
+            label="⬇️ Descargar para Imprimir (TXT/Markdown)",
+            data=markdown_data,
+            file_name=f'Ordenes_Mantenimiento_Imprimir_{date.today().strftime("%Y%m%d")}.txt',
+            mime='text/plain',
+            help="Descarga un archivo de texto estructurado. Abre el archivo y usa la función de tu navegador/sistema operativo para 'Imprimir a PDF'."
+        )
+        
     else:
         st.info("Aún no hay órdenes de mantenimiento registradas en esta sesión.")
 
@@ -198,35 +206,40 @@ with tab_historial:
 # -------------------------------------------------------------------------
 with tab_personal:
     st.header("Administración de Personal y Firmantes")
-    st.info("Utiliza esta sección para **agregar nuevos nombres** a las listas de firmantes (Elaboró, Revisó, Aprobó).")
+    st.info("Ingresa el Nombre y la Profesión/Cargo. El sistema los combinará para los selectores de firma.")
     
     # Formulario para Agregar Personal
     with st.form("form_agregar_personal"):
-        st.subheader("Agregar Nuevo Empleado")
+        st.subheader("Agregar Nuevo Empleado/Firmante")
         
-        col_rol, col_nombre = st.columns(2)
-        with col_rol:
-            rol_a_modificar = st.selectbox(
-                "Selecciona el Rol a Modificar",
-                options=list(st.session_state.directorio_personal.keys())
-            )
-        with col_nombre:
-            nombre_nuevo = st.text_input("Nombre Completo del Empleado")
+        col_n, col_p = st.columns(2)
+        with col_n:
+            nombre_nuevo = st.text_input("Nombre Completo")
+        with col_p:
+            profesion_nueva = st.text_input("Profesión / Cargo (Ej: Técnico, Biomédico, Ing. Civil)")
+            
+        rol_a_modificar = st.selectbox(
+            "Selecciona el Rol de Firma que tendrá",
+            options=list(st.session_state.directorio_personal.keys())
+        )
             
         agregar_button = st.form_submit_button("Agregar a la Lista")
         
         if agregar_button:
-            agregar_personal(rol_a_modificar, nombre_nuevo)
+            if nombre_nuevo and profesion_nueva:
+                agregar_personal(rol_a_modificar, nombre_nuevo, profesion_nueva)
+            else:
+                st.error("Debes ingresar tanto el Nombre como la Profesión/Cargo.")
 
     st.markdown("---")
     
     # Visualización del Directorio Actual
-    st.subheader("Directorio de Firmantes Actual")
+    st.subheader("Directorio de Firmantes Actual (Nombre - Profesión/Cargo)")
     
     data_mostrar = []
     for rol, personas in st.session_state.directorio_personal.items():
         for persona in personas:
-            data_mostrar.append({"Rol": rol, "Nombre": persona})
+            data_mostrar.append({"Rol de Firma": rol, "Nombre - Cargo": persona})
             
     df_directorio = pd.DataFrame(data_mostrar)
     st.dataframe(df_directorio, use_container_width=True, hide_index=True)
