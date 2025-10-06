@@ -11,10 +11,18 @@ import io
 DEPENDENCIAS = ["Electrico", "Infraestructura", "Biomedico", "Otro"]
 TIPOS_MANTENIMIENTO = ["Correctivo", "Preventivo", "Predictivo", "Inspección", "Instalación"]
 
-# Directorio de Trabajadores/Firmantes INICIAL (Formato: "Nombre - Profesión/Cargo")
+# Lista de Servicios Adicionales (NUEVO)
+SERVICIOS_SOLICITUD = [
+    "UCI ADULTOS", "PEDIATRIA", "GINECOLOGIA", "CALL CENTER", 
+    "CONSULTA EXTERNA", "APS", "UCI NEONATAL", "UCI INTERMEDIA", 
+    "CIRUGIA", "HOSPITALIZACION", "URGENCIAS", "ODONTOLOGÍA", 
+    "FISIOTERAPIA", "P Y P", "LABORATORIO", "GASTROENTEROLOGÍA", "OTRO"
+]
+
+
+# Directorio de Trabajadores/Firmantes INICIAL
 DIRECTORIO_TRABAJADORES_INICIAL = {
     "Elaboro": ["Magaly Gómez - Técnica", "Oscar Muñoz - Operario"],
-    # Se añade la profesión/cargo a Danna y Hery
     "Reviso": ["Danna Hernandez - Coordinadora Mantenimiento", "Hery Peña - Biomédico", "Jefe de Mantenimiento - Ingeniería"],
     "Aprobo": ["Gerente de Operaciones - Gerente", "Jefe de Almacén - Logística"]
 }
@@ -92,21 +100,29 @@ with tab_orden:
         with col3:
             dependencia_selected = st.selectbox("Dependencia Solicitante", options=DEPENDENCIAS)
 
+        # --- Campo de Servicio (NUEVO) ---
+        servicio_solicitud = st.selectbox(
+            "Servicio al que Aplica la Solicitud", 
+            options=SERVICIOS_SOLICITUD
+        )
+
         # --- Motivo y Tipo de Mantenimiento ---
         motivo_orden = st.text_area("Motivo de la Orden (Descripción del trabajo/falla)", 
-                                    placeholder="Ej: Se solicita una lámpara de sobreponer de 18w...", 
+                                    placeholder=f"Ej: Se solicita una lámpara de sobreponer de 18w, para el servicio de {servicio_solicitud}...", 
                                     max_chars=500)
         
         tipo_mant = st.selectbox("Tipo de Mantenimiento", options=TIPOS_MANTENIMIENTO) 
 
-        # --- Campo de Responsable (Simplificado) ---
-        st.markdown("### Coordinación y Responsable")
+        # --- Campo de Responsable (Simplificado y Flexible) ---
+        st.markdown("### Responsable Designado")
         
-        # El campo de Responsable Designado ahora usa la lista 'Reviso'
+        # Combina las listas de 'Elaboro' y 'Revisó' para dar flexibilidad
+        opciones_responsable = st.session_state.directorio_personal["Elaboro"] + st.session_state.directorio_personal["Reviso"]
+        
         responsable_designado = st.selectbox(
-            "Responsable Designado", 
-            options=st.session_state.directorio_personal["Reviso"],
-            help="Designa al Responsable del área (ej: Danna Hernández, Hery Peña, etc.)"
+            "Responsable Designado para la Ejecución", 
+            options=opciones_responsable,
+            help="Puede ser cualquier persona de los roles 'Elaboró' o 'Revisó'."
         )
         
         # --- Solicitud de Materiales (Máx. 3 Ítems) ---
@@ -129,8 +145,8 @@ with tab_orden:
 
         st.markdown("---")
 
-        # --- Firmas/Responsables (Usa el Directorio con Profesión) ---
-        st.subheader("Personal que Realiza/Firma")
+        # --- Firmas/Roles de Flujo ---
+        st.subheader("Personal de Flujo y Firmas")
         
         col_e, col_r, col_a = st.columns(3)
         with col_e:
@@ -152,7 +168,8 @@ with tab_orden:
                     "Número de Orden": orden_actual,
                     "Solicitud N°": solicitud_actual,
                     "Fecha": fecha_actual,
-                    "Dependencia": dependencia_selected,
+                    "Dependencia Solicitante": dependencia_selected,
+                    "Servicio Aplicado": servicio_solicitud, # NUEVO CAMPO
                     "Responsable Designado": responsable_designado,
                     "Motivo": motivo_orden,
                     "Tipo de Mantenimiento": tipo_mant,
@@ -173,9 +190,8 @@ with tab_historial:
         df = pd.DataFrame(st.session_state.orden_data)
         st.dataframe(df, use_container_width=True)
         
-        # Opción de Descarga (CSV)
+        # Descarga (CSV)
         csv = convert_df_to_csv(df)
-        
         st.download_button(
             label="⬇️ Descargar Historial (CSV)",
             data=csv,
@@ -184,17 +200,16 @@ with tab_historial:
         )
 
         st.markdown("---")
-        st.subheader("Descarga para Impresión (Imprimir a PDF)")
-        st.warning("La generación directa de PDF estructurados requiere librerías externas. Usa el CSV para datos.")
+        st.subheader("Descarga para Impresión")
+        st.info("Para obtener un PDF, descarga el archivo TXT y usa la función de 'Imprimir a PDF' de tu sistema operativo o navegador.")
         
-        # Opción de descarga en formato TXT estructurado (para copiar/imprimir a PDF)
+        # Descarga en formato TXT estructurado (para copiar/imprimir a PDF)
         markdown_data = df.to_markdown(index=False)
         st.download_button(
             label="⬇️ Descargar para Imprimir (TXT/Markdown)",
             data=markdown_data,
             file_name=f'Ordenes_Mantenimiento_Imprimir_{date.today().strftime("%Y%m%d")}.txt',
             mime='text/plain',
-            help="Descarga un archivo de texto estructurado. Abre el archivo y usa la función de tu navegador/sistema operativo para 'Imprimir a PDF'."
         )
         
     else:
@@ -206,7 +221,7 @@ with tab_historial:
 # -------------------------------------------------------------------------
 with tab_personal:
     st.header("Administración de Personal y Firmantes")
-    st.info("Ingresa el Nombre y la Profesión/Cargo. El sistema los combinará para los selectores de firma.")
+    st.info("Ingresa el Nombre y la Profesión/Cargo. El sistema los combinará en la lista de selección.")
     
     # Formulario para Agregar Personal
     with st.form("form_agregar_personal"):
