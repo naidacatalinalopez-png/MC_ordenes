@@ -22,11 +22,11 @@ SERVICIOS_SOLICITUD = [
     "FISIOTERAPIA", "P Y P", "LABORATORIO", "GASTROENTEROLOGÍA", "OTRO"
 ]
 
-# Directorio de Trabajadores/Firmantes INICIAL
+# Directorio de Trabajadores/Firmantes INICIAL (Las claves son sin acento: Elaboro, Reviso, Aprobo)
 DIRECTORIO_TRABAJADORES_INICIAL = {
     "Elaboro": ["Magaly Gómez - Técnica", "Oscar Muñoz - Operario"],
     "Reviso": ["Danna Hernandez - Coordinadora Mantenimiento", "Hery Peña - Biomédico", "Jefe de Mantenimiento - Ingeniería"],
-    "Aprobo": ["Gerente de Operaciones - Gerente", "Jefe de Almacén - Logística"]
+    "Aprobo": ["Gerente de Operaciones - Gerente", "Jefe de Almacén - Logística"] # <-- Clave 'Aprobo'
 }
 
 # Inicializar el estado de la sesión
@@ -73,8 +73,19 @@ def generar_html_orden(orden):
     """Genera una página HTML estructurada para la impresión a PDF, incluyendo el logo."""
     
     materiales_html = ""
-    for item in orden['Materiales Solicitados'].split('; '):
-        materiales_html += f"<tr><td>{item.split('(')[0].strip()}</td><td></td><td>{item.split('(')[1].replace(')', '')}</td></tr>"
+    # Esta función asume que Materiales Solicitados es una cadena separada por '; '
+    try:
+        for item in orden['Materiales Solicitados'].split('; '):
+            # Intenta parsear cada ítem
+            if '(' in item and ')' in item:
+                nombre_material = item.split('(')[0].split('. ', 1)[-1].strip()
+                cantidad_unidad = item.split('(')[1].replace(')', '')
+                materiales_html += f"<tr><td>{nombre_material}</td><td></td><td>{cantidad_unidad}</td></tr>"
+            else:
+                 materiales_html += f"<tr><td>{item}</td><td></td><td>N/A</td></tr>"
+    except Exception:
+         materiales_html = "<tr><td colspan='3'>Error al cargar detalles de materiales.</td></tr>"
+
 
     html_content = f"""
     <!DOCTYPE html>
@@ -110,13 +121,13 @@ def generar_html_orden(orden):
             <tr><th>Número de Orden</th><td>{orden['Número de Orden']}</td><th>Fecha</th><td>{orden['Fecha']}</td></tr>
             <tr><th>Solicitud N°</th><td>{orden['Solicitud N°']}</td><th>Dependencia Solicitante</th><td>{orden['Dependencia Solicitante']}</td></tr>
             <tr><th>Servicio Aplicado</th><td colspan="3">{orden['Servicio Aplicado']}</td></tr>
+            <tr><th>Responsable Designado</th><td colspan="3">{orden['Responsable Designado']}</td></tr>
             <tr><th>Tipo de Mantenimiento</th><td colspan="3">{orden['Tipo de Mantenimiento']}</td></tr>
         </table>
         
-        <h3>MOTIVO Y RESPONSABLE</h3>
+        <h3>MOTIVO DE LA ORDEN</h3>
         <table>
-            <tr><th>Motivo</th><td colspan="3">{orden['Motivo']}</td></tr>
-            <tr><th>Responsable Designado</th><td colspan="3">{orden['Responsable Designado']}</td></tr>
+            <tr><td colspan="3">{orden['Motivo']}</td></tr>
         </table>
 
         <h3>MATERIALES SOLICITADOS</h3>
@@ -204,7 +215,6 @@ with tab_orden:
         st.markdown("### Solicitud de Materiales (Máx. 3 Ítems)")
         materiales = []
         for i in range(1, 4):
-            # ... (código de materiales, se mantiene igual)
             st.markdown(f"**Ítem {i}:**")
             col_m1, col_m2, col_m3 = st.columns(3)
             with col_m1:
@@ -227,7 +237,8 @@ with tab_orden:
         with col_r:
             reviso = st.selectbox("Revisó", options=st.session_state.directorio_personal["Reviso"])
         with col_a:
-            aprobo = st.selectbox("Aprobó", options=st.session_state.directorio_personal["Aprobó"])
+            # CORRECCIÓN: Usar la clave sin acento "Aprobo"
+            aprobo = st.selectbox("Aprobó", options=st.session_state.directorio_personal["Aprobo"])
 
         st.markdown("---")
         
@@ -252,7 +263,6 @@ with tab_orden:
                     "Aprobó": aprobo
                 }
                 guardar_orden(nueva_orden)
-                # Guardamos la orden recién creada para el botón de PDF
                 st.session_state.ultima_orden_guardada = nueva_orden
                 orden_guardada_recientemente = True
 
@@ -261,12 +271,11 @@ with tab_orden:
         st.markdown("---")
         st.subheader(f"Orden #{st.session_state.ultima_orden_guardada['Número de Orden']} lista para imprimir:")
         
-        # Insertar el HTML como markdown, permitiendo la interacción
         st.markdown(
             generar_html_orden(st.session_state.ultima_orden_guardada), 
             unsafe_allow_html=True
         )
-        st.info("Presiona el botón para abrir la orden. Luego usa CTRL+P o 'Imprimir' y selecciona 'Guardar como PDF' en tu navegador.")
+        st.info("Presiona el botón para abrir la orden en una nueva ventana. Luego usa **CTRL+P** o 'Imprimir' y selecciona **'Guardar como PDF'** en tu navegador para generar el archivo final con el logo.")
 
 
 # -------------------------------------------------------------------------
@@ -297,7 +306,6 @@ with tab_historial:
 # -------------------------------------------------------------------------
 with tab_personal:
     st.header("Administración de Personal y Firmantes")
-    # ... (código de gestión de personal, se mantiene igual)
     st.info("Ingresa el Nombre y la Profesión/Cargo. El sistema los combinará en la lista de selección.")
     
     with st.form("form_agregar_personal"):
@@ -328,8 +336,10 @@ with tab_personal:
     
     data_mostrar = []
     for rol, personas in st.session_state.directorio_personal.items():
+        # Aquí se muestra el rol sin acento, que es la clave real
+        nombre_rol_display = rol.replace('o', 'ó').replace('e', 'é') # Ajuste visual para el usuario
         for persona in personas:
-            data_mostrar.append({"Rol de Firma": rol, "Nombre - Cargo": persona})
+            data_mostrar.append({"Rol de Firma": nombre_rol_display, "Nombre - Cargo": persona})
             
     df_directorio = pd.DataFrame(data_mostrar)
     st.dataframe(df_directorio, use_container_width=True, hide_index=True)
