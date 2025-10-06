@@ -1,1 +1,2 @@
-# MC_ordenes
+streamlit
+pandas
