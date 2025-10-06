@@ -1,0 +1,125 @@
+import streamlit as st
+import pandas as pd
+from datetime import date
+
+# --- 1. Directorio de Trabajadores y Firmantes (Modificar aquí) ---
+DIRECTORIO_TRABAJADORES = {
+    # Agrega o modifica el personal que elabora la orden
+    "Elaboro": ["Magaly Gómez", "Oscar Muñoz", "Técnico A", "Técnico B"],
+    # Agrega o modifica el personal que revisa
+    "Reviso": ["Jefe de Mantenimiento", "Coordinador de TAF"],
+    # Agrega o modifica el personal que aprueba
+    "Aprobo": ["Gerente de Operaciones", "Jefe de Almacén"]
+}
+
+# 2. Tipos de Mantenimiento
+TIPOS_MANTENIMIENTO = ["Correctivo", "Preventivo", "Predictivo", "Inspección", "Instalación"]
+
+# 3. Inicializar el estado de la sesión para persistencia de datos (mientras la app está abierta)
+if 'orden_data' not in st.session_state:
+    st.session_state.orden_data = []
+
+# 4. Control de Numeración Consecutiva (El número se "guarda por memoria" aquí)
+if 'siguiente_orden_numero' not in st.session_state:
+    # INICIA AQUÍ: Comienza en 929 (el siguiente a tu Orden #928)
+    st.session_state.siguiente_orden_numero = 929 
+    
+if 'siguiente_solicitud_numero' not in st.session_state:
+    # Simulación de la numeración 09-10 (Solo un ejemplo, la lógica de incremento es más compleja)
+    st.session_state.siguiente_solicitud_numero = 11
+
+# --- Funciones ---
+
+def generar_solicitud_nro(current_num):
+    """Genera el siguiente número de Solicitud (Ej: 09-11)"""
+    # Mantenemos el prefijo '09' y solo incrementamos el sufijo para simplificar
+    return f"09-{current_num:02d}"
+
+def guardar_orden(nueva_orden):
+    """Añade la nueva orden al registro y actualiza los números consecutivos."""
+    st.session_state.orden_data.append(nueva_orden)
+    st.session_state.siguiente_orden_numero += 1
+    st.session_state.siguiente_solicitud_numero += 1
+    st.success(f"✅ Orden de Mantenimiento #{nueva_orden['Número de Orden']} guardada con éxito.")
+
+# --- Interfaz de la Aplicación Streamlit ---
+
+st.title("Sistema Automatizado de Órdenes de Mantenimiento (Streamlit) 🛠️")
+st.markdown("---")
+
+## 📝 Creación de Nueva Orden de Mantenimiento
+
+# Obtiene los números de orden actuales
+orden_actual = st.session_state.siguiente_orden_numero
+solicitud_actual = generar_solicitud_nro(st.session_state.siguiente_solicitud_numero)
+
+with st.form(key='orden_form'):
+    st.subheader(f"Nueva Orden de Trabajo N°: {orden_actual}")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        fecha_actual = date.today().strftime("%Y-%m-%d")
+        st.text_input("Fecha", value=fecha_actual, disabled=True)
+    with col2:
+        st.text_input("Solicitud N°", value=solicitud_actual, disabled=True, help="Número de solicitud consecutivo (Ej: 09-XX)")
+        
+    dependencia = st.text_input("Dependencia", value="ÁREA DE MANTENIMIENTO")
+
+    # --- Campo para el Motivo y Tipo de Mantenimiento ---
+    motivo_orden = st.text_area("Motivo de la Orden (Descripción del trabajo/falla)", 
+                                placeholder="Ej: Se solicita una lámpara de sobreponer de 18w, para el servicio de Optometría.", 
+                                max_chars=500)
+    
+    tipo_mant = st.selectbox("Tipo de Mantenimiento", options=TIPOS_MANTENIMIENTO, help="Clasifica el tipo de mantenimiento solicitado.")
+    
+    # --- Solicitud de Material/Ítem ---
+    st.markdown("### Detalles de Consumo/Material")
+    item_solicitado = st.text_input("Ítem Solicitado (Ej: LÁMPARA DE SOBREPONER DE 18W)")
+    unidad_medida = st.text_input("Unidad de Medida", value="UNIDAD")
+    cantidad_pedida = st.number_input("Cantidad Pedida", min_value=1, step=1)
+
+    st.markdown("---")
+
+    # --- Firmas/Responsables (Usa el Directorio) ---
+    st.subheader("Personal y Firmas")
+    
+    col_e, col_r, col_a = st.columns(3)
+    with col_e:
+        elaboro = st.selectbox("Elaboró", options=DIRECTORIO_TRABAJADORES["Elaboro"])
+    with col_r:
+        reviso = st.selectbox("Revisó", options=DIRECTORIO_TRABAJADORES["Reviso"])
+    with col_a:
+        aprobo = st.selectbox("Aprobó", options=DIRECTORIO_TRABAJADORES["Aprobo"])
+
+    st.markdown("---")
+    
+    submit_button = st.form_submit_button(label='Guardar Orden y Generar Siguiente Consecutivo')
+
+    if submit_button:
+        if not motivo_orden or not item_solicitado:
+            st.error("Por favor, completa el Motivo de la Orden y el Ítem Solicitado.")
+        else:
+            nueva_orden = {
+                "Número de Orden": orden_actual,
+                "Solicitud N°": solicitud_actual,
+                "Fecha": fecha_actual,
+                "Dependencia": dependencia,
+                "Motivo": motivo_orden,
+                "Tipo de Mantenimiento": tipo_mant,
+                "Ítem Solicitado": item_solicitado,
+                "Cantidad": cantidad_pedida,
+                "Elaboró": elaboro,
+                "Revisó": reviso,
+                "Aprobó": aprobo
+            }
+            guardar_orden(nueva_orden)
+
+
+## 📊 Historial de Órdenes
+
+st.header("Historial de Órdenes Guardadas")
+if st.session_state.orden_data:
+    df = pd.DataFrame(st.session_state.orden_data)
+    st.dataframe(df, use_container_width=True)
+else:
+    st.info("Aún no hay órdenes de mantenimiento registradas en esta sesión.")
