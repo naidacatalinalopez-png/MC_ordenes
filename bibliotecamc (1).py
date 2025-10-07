@@ -10,7 +10,6 @@ import base64
 
 def generar_solicitud_nro(current_num):
     """Genera el formato de solicitud (ej. '09-11') a partir del número base."""
-    # Se movió al inicio para evitar 'NameError' al inicializar st.session_state
     return f"09-{current_num:02d}"
 
 # =========================================================================
@@ -31,7 +30,7 @@ SERVICIOS_SOLICITUD = [
     "FISIOTERAPIA", "P Y P", "LABORATORIO", "GASTROENTEROLOGÍA", "OTRO"
 ]
 
-# Directorio de Trabajadores/Firmantes INICIAL (Estructura: {Rol: {Nombre_Profesion: {"display": "Nombre - Profesión", "cc": "123456"}}})
+# Directorio de Trabajadores/Firmantes INICIAL
 DIRECTORIO_TRABAJADORES_INICIAL = {
     "Elaboro": {
         "Magaly Gómez - Técnica": {"display": "Magaly Gómez - Técnica", "cc": "111111"},
@@ -104,7 +103,6 @@ def guardar_orden(nueva_orden):
     st.success(f"✅ Orden de Mantenimiento #{nueva_orden['Número de Orden']} guardada con éxito.")
 
 @st.cache_data
-# MODIFICACIÓN CLAVE: Cambiado de CSV a Excel (xlsx)
 def convert_df_to_excel(df):
     """Convierte un DataFrame a un archivo Excel (xlsx) en memoria."""
     output = io.BytesIO()
@@ -124,7 +122,7 @@ def agregar_personal(rol, nombre, profesion, cc):
         else:
             st.warning(f"⚠️ **{nombre_key}** ya existe en la lista de **{rol}**.")
 
-# Función para generar solo el HTML (SIN CAMBIOS)
+# Función para generar solo el HTML 
 def generar_html_orden(orden):
     """Genera una página HTML estructurada para la impresión a PDF, incluyendo el logo."""
     
@@ -398,7 +396,9 @@ with tab_orden:
             guardar_orden(nueva_orden)
             st.session_state.ultima_orden_guardada = nueva_orden
             orden_guardada_recientemente = True
-            st.experimental_rerun() # Recargar para que los inputs muestren el nuevo consecutivo
+            
+            # CORRECCIÓN: Usar st.rerun()
+            st.rerun() 
 
     # Botón para descargar/imprimir la última orden guardada
     if st.session_state.get('ultima_orden_guardada') and orden_guardada_recientemente:
@@ -418,7 +418,7 @@ with tab_orden:
 
 
 # -------------------------------------------------------------------------
-# === PESTAÑA 2: HISTORIAL Y DESCARGA (Ahora en Excel) ===
+# === PESTAÑA 2: HISTORIAL Y DESCARGA (Excel XLSX) ===
 # -------------------------------------------------------------------------
 with tab_historial:
     st.header("Historial de Órdenes Guardadas")
@@ -433,7 +433,7 @@ with tab_historial:
             label="⬇️ Descargar Historial Completo (Excel XLSX)",
             data=excel_data,
             file_name=f'Ordenes_Mantenimiento_{date.today().strftime("%Y%m%d")}.xlsx',
-            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', # Nuevo MIME type para XLSX
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
         )
         
     else:
@@ -534,4 +534,6 @@ with tab_personal:
         # Actualizar el Session State
         st.session_state.directorio_personal = nuevo_directorio
         st.success("💾 Directorio de personal actualizado con éxito.")
-        st.experimental_rerun() # Recargar para que los cambios se reflejen inmediatamente en los selectbox
+        
+        # CORRECCIÓN: Usar st.rerun()
+        st.rerun()
