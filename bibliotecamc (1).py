@@ -67,6 +67,11 @@ if 'current_orden_nro_input' not in st.session_state:
 
 if 'current_solicitud_nro_input' not in st.session_state:
     st.session_state.current_solicitud_nro_input = generar_solicitud_nro(st.session_state.siguiente_solicitud_numero)
+
+# --- CORRECCIÓN CLAVE ---
+# Bandera de control para la descarga. Debe estar en st.session_state para sobrevivir al st.rerun()
+if 'mostrar_descarga_ultima_orden' not in st.session_state:
+    st.session_state.mostrar_descarga_ultima_orden = False
 # ---------------------------------------------
 
 
@@ -248,7 +253,10 @@ tab_orden, tab_historial, tab_personal = st.tabs(["📝 Nueva Orden", "📊 Hist
 # -------------------------------------------------------------------------
 with tab_orden:
     
-    orden_guardada_recientemente = False
+    # Reiniciar la bandera si no venimos de guardar una orden
+    if 'ultima_orden_guardada' not in st.session_state:
+        st.session_state.mostrar_descarga_ultima_orden = False
+
 
     with st.form(key='orden_form'):
         
@@ -394,14 +402,16 @@ with tab_orden:
                 "Aprobó": aprobo
             }
             guardar_orden(nueva_orden)
-            st.session_state.ultima_orden_guardada = nueva_orden
-            orden_guardada_recientemente = True
             
-            # CORRECCIÓN: Usar st.rerun()
-            st.rerun() 
+            # PASO CLAVE: Guardamos la orden y activamos la bandera ANTES de reiniciar
+            st.session_state.ultima_orden_guardada = nueva_orden
+            st.session_state.mostrar_descarga_ultima_orden = True
+            
+            st.rerun() # Reinicia la app para mostrar los nuevos consecutivos y la sección de descarga.
 
     # Botón para descargar/imprimir la última orden guardada
-    if st.session_state.get('ultima_orden_guardada') and orden_guardada_recientemente:
+    # Usamos la bandera de Session State para controlar la visibilidad
+    if st.session_state.get('mostrar_descarga_ultima_orden') and st.session_state.get('ultima_orden_guardada'):
         st.markdown("---")
         st.subheader(f"Orden #{st.session_state.ultima_orden_guardada['Número de Orden']} lista para descargar:")
         
@@ -415,6 +425,12 @@ with tab_orden:
             key='download_html_orden'
         )
         st.info("💡 **Instrucción:** Descarga el archivo **HTML**, ábrelo con tu navegador (doble clic) y luego usa **CTRL+P** o 'Imprimir' para seleccionar **'Guardar como PDF'** y obtener el documento final con el logo y el C.C.")
+        
+        # Opcional: Agregar un botón para borrar la sección de descarga y limpiar el estado
+        if st.button("Crear una Nueva Orden (Limpiar sección de descarga)"):
+            del st.session_state.ultima_orden_guardada
+            st.session_state.mostrar_descarga_ultima_orden = False
+            st.rerun()
 
 
 # -------------------------------------------------------------------------
@@ -535,5 +551,4 @@ with tab_personal:
         st.session_state.directorio_personal = nuevo_directorio
         st.success("💾 Directorio de personal actualizado con éxito.")
         
-        # CORRECCIÓN: Usar st.rerun()
         st.rerun()
