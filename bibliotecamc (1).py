@@ -90,38 +90,52 @@ def agregar_personal(rol, nombre, profesion, cc):
 def generar_html_orden(orden):
     """Genera una página HTML estructurada para la impresión a PDF, incluyendo el logo."""
     
-    materiales_html = ""
-    # Esta función asume que Materiales Solicitados es una cadena separada por '; '
-    try:
-        for item in orden['Materiales Solicitados'].split('; '):
-            # Intenta parsear cada ítem
-            if '(' in item and ')' in item:
-                nombre_material = item.split('(')[0].split('. ', 1)[-1].strip()
-                cantidad_unidad = item.split('(')[1].replace(')', '')
-                materiales_html += f"<tr><td>{nombre_material}</td><td></td><td>{cantidad_unidad}</td></tr>"
-            else:
-                 materiales_html += f"<tr><td>{item}</td><td></td><td>N/A</td></tr>"
-    except Exception:
-          materiales_html = "<tr><td colspan='3'>Error al cargar detalles de materiales.</td></tr>"
-
-    # Obtener C.C. del personal de firma
-    # Se debe buscar la información completa del personal en el directorio
-    
     # Función de ayuda para buscar el CC del firmante.
     def get_cc(rol, display_name):
+        # Usamos .get(rol, {}) para prevenir KeyError
         directorio = st.session_state.directorio_personal.get(rol, {})
-        # Buscamos la clave del directorio que coincide con el 'display_name' guardado
-        # Iteramos sobre las claves (nombre - profesión) para encontrar la coincidencia.
+        # Buscamos la clave (nombre - profesión) que coincide con el 'display_name' guardado
         for key, value in directorio.items():
-            if value["display"] == display_name:
-                return value["cc"]
+            if value.get("display") == display_name:
+                return value.get("cc", "N/A")
         return "N/A"
 
+    # --- Procesamiento de Materiales ---
+    materiales_html = ""
+    try:
+        if orden['Materiales Solicitados']:
+            for item_full in orden['Materiales Solicitados'].split('; '):
+                # El formato esperado es "1. Item (Cantidad Unidad)"
+                parts = item_full.strip().split(' (', 1)
+                nombre_material = parts[0].split('. ', 1)[-1].strip()
+                cantidad_unidad = parts[1].replace(')', '') if len(parts) > 1 else 'N/A'
+                materiales_html += f"<tr><td>{nombre_material}</td><td></td><td>{cantidad_unidad}</td></tr>"
+        else:
+            materiales_html = "<tr><td colspan='3'>No se solicitaron materiales.</td></tr>"
+            
+    except Exception as e:
+        # En caso de error, al menos muestra el error para depuración si la página llega a abrir
+        materiales_html = f"<tr><td colspan='3'>Error al cargar detalles de materiales: {str(e)}</td></tr>"
+
+    # --- Obtener C.C. del personal de firma ---
     elaboro_cc = get_cc("Elaboro", orden['Elaboró'])
     reviso_cc = get_cc("Reviso", orden['Revisó'])
     aprobo_cc = get_cc("Aprobo", orden['Aprobó'])
-
-    # El código HTML se mantiene similar, pero se añade el C.C.
+    
+    # Se utiliza una sola cadena de estilo para asegurar la coherencia del HTML
+    style_content = """
+        body { font-family: Arial, sans-serif; font-size: 10pt; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }
+        .header img { max-width: 100px; height: auto; border-radius: 50%; }
+        .header-info { text-align: right; }
+        h2 { color: #333; margin-top: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .signature-area { display: flex; justify-content: space-around; margin-top: 40px; text-align: center; }
+        .signature-box { width: 30%; padding-top: 5px; }
+        .signature-line { border-top: 1px solid #000; padding-top: 5px; display: inline-block; width: 80%; }
+    """
 
     html_content = f"""
     <!DOCTYPE html>
@@ -129,17 +143,7 @@ def generar_html_orden(orden):
     <head>
         <title>Orden de Mantenimiento N° {orden['Número de Orden']}</title>
         <style>
-            body {{ font-family: Arial, sans-serif; font-size: 10pt; padding: 20px; }}
-            .header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }}
-            .header img {{ max-width: 100px; height: auto; border-radius: 50%; }}
-            .header-info {{ text-align: right; }}
-            h2 {{ color: #333; margin-top: 5px; }}
-            table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; }}
-            th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-            th {{ background-color: #f2f2f2; }}
-            .signature-area {{ display: flex; justify-content: space-around; margin-top: 40px; text-align: center; }}
-            .signature-box {{ width: 30%; padding-top: 5px; }}
-            .signature-line {{ border-top: 1px solid #000; padding-top: 5px; display: inline-block; width: 80%; }}
+            {style_content}
         </style>
     </head>
     <body>
@@ -197,11 +201,10 @@ def generar_html_orden(orden):
     </body>
     </html>
     """
-    # Codificar el HTML para incrustarlo en un enlace data URI
+    # Codificar el HTML
     b64_html = base64.b64encode(html_content.encode('utf-8')).decode()
     
-    ## CAMBIO: El enlace genera un archivo PDF al nombrarlo '.pdf', aunque usa la función de impresión de HTML.
-    ## Esto es para mejorar la experiencia del usuario y que se vea el nombre de archivo sugerido.
+    # Enlace de apertura: ya sin 'download'
     return f'<a href="data:text/html;base64,{b64_html}" target="_blank" style="text-decoration: none; padding: 10px; background-color: #4CAF50; color: white; border-radius: 5px;">📄 Abrir Orden para Imprimir a PDF</a>'
 # =========================================================================
 # === 3. INTERFAZ DE LA APLICACIÓN (PESTAÑAS) ===
