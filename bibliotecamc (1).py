@@ -5,6 +5,15 @@ import io
 import base64
 
 # =========================================================================
+# === 0. FUNCIONES ESENCIALES INICIALES ===
+# =========================================================================
+
+def generar_solicitud_nro(current_num):
+    """Genera el formato de solicitud (ej. '09-11') a partir del número base."""
+    # Se movió al inicio para evitar 'NameError' al inicializar st.session_state
+    return f"09-{current_num:02d}"
+
+# =========================================================================
 # === 1. CONFIGURACIÓN Y ESTADO INICIAL ===
 # =========================================================================
 
@@ -46,14 +55,14 @@ if 'orden_data' not in st.session_state:
 if 'directorio_personal' not in st.session_state:
     st.session_state.directorio_personal = DIRECTORIO_TRABAJADORES_INICIAL
 
-# --- CAMBIOS CLAVE PARA LA EDICIÓN MANUAL ---
+# Consecutivos AUTOMÁTICOS
 if 'siguiente_orden_numero' not in st.session_state:
     st.session_state.siguiente_orden_numero = 929 
     
 if 'siguiente_solicitud_numero' not in st.session_state:
     st.session_state.siguiente_solicitud_numero = 11
 
-# Variables para guardar los valores editados ANTES de que se confirme la orden
+# Variables para guardar los valores editados (se inicializan con el consecutivo)
 if 'current_orden_nro_input' not in st.session_state:
     st.session_state.current_orden_nro_input = st.session_state.siguiente_orden_numero
 
@@ -66,33 +75,28 @@ if 'current_solicitud_nro_input' not in st.session_state:
 # === 2. FUNCIONES DE LÓGICA Y DESCARGA ===
 # =========================================================================
 
-def generar_solicitud_nro(current_num):
-    """Genera el formato de solicitud (ej. '09-11') a partir del número base."""
-    return f"09-{current_num:02d}"
-
 def guardar_orden(nueva_orden):
     """Guarda la orden y actualiza los CONSECUTIVOS automáticos si se usaron."""
     st.session_state.orden_data.append(nueva_orden)
     
-    # ⚠️ Lógica para actualizar los consecutivos
-    # Solo incrementamos si los números guardados coinciden con los 'siguientes' que el sistema iba a asignar
-    # Si el usuario editó el número, el siguiente número consecutivo DEBE ser 1 más que el número editado.
-    
-    # Si se usó el consecutivo automático, el valor de la orden guardada debe ser igual al 'siguiente_orden_numero'
-    # Si no fue así, significa que se editó, y el nuevo 'siguiente_orden_numero' será +1 al editado.
-    
+    # Lógica para actualizar los consecutivos
     nro_orden_guardado = int(nueva_orden['Número de Orden'])
-    solicitud_num_guardado = int(nueva_orden['Solicitud N°'].split('-')[-1]) # Extraer el '11' de '09-11'
+    
+    # Extraer el número de solicitud (el '11' de '09-11')
+    try:
+        solicitud_num_guardado = int(nueva_orden['Solicitud N°'].split('-')[-1]) 
+    except ValueError:
+        solicitud_num_guardado = 0 # Fallback si el formato es incorrecto
 
-    # Actualizar la Orden N°
+    # Actualizar la Orden N°: Si el número guardado es >= al consecutivo, avanzamos el consecutivo.
     if nro_orden_guardado >= st.session_state.siguiente_orden_numero:
         st.session_state.siguiente_orden_numero = nro_orden_guardado + 1
     
-    # Actualizar el N° de Solicitud
+    # Actualizar el N° de Solicitud:
     if solicitud_num_guardado >= st.session_state.siguiente_solicitud_numero:
         st.session_state.siguiente_solicitud_numero = solicitud_num_guardado + 1
         
-    # Reiniciar los inputs al nuevo consecutivo
+    # Reiniciar los inputs al nuevo consecutivo para la próxima orden
     st.session_state.current_orden_nro_input = st.session_state.siguiente_orden_numero
     st.session_state.current_solicitud_nro_input = generar_solicitud_nro(st.session_state.siguiente_solicitud_numero)
 
@@ -100,9 +104,14 @@ def guardar_orden(nueva_orden):
     st.success(f"✅ Orden de Mantenimiento #{nueva_orden['Número de Orden']} guardada con éxito.")
 
 @st.cache_data
-# MODIFICACIÓN CLAVE: Se añade encoding='utf-8-sig' para asegurar la compatibilidad con acentos en Excel
-def convert_df_to_csv(df):
-    return df.to_csv(index=False).encode('utf-8-sig')
+# MODIFICACIÓN CLAVE: Cambiado de CSV a Excel (xlsx)
+def convert_df_to_excel(df):
+    """Convierte un DataFrame a un archivo Excel (xlsx) en memoria."""
+    output = io.BytesIO()
+    # Usamos openpyxl como motor por defecto para xlsx
+    df.to_excel(output, index=False, sheet_name='Ordenes_Mantenimiento')
+    processed_data = output.getvalue()
+    return processed_data
 
 def agregar_personal(rol, nombre, profesion, cc):
     nombre_key = f"{nombre} - {profesion}"
@@ -241,9 +250,6 @@ tab_orden, tab_historial, tab_personal = st.tabs(["📝 Nueva Orden", "📊 Hist
 # -------------------------------------------------------------------------
 with tab_orden:
     
-    # 🚨 NOTA: Los valores predeterminados de los input se leen de st.session_state.current_orden_nro_input
-    # Esto asegura que si se recarga la página, se muestre el consecutivo APROPIADO.
-    
     orden_guardada_recientemente = False
 
     with st.form(key='orden_form'):
@@ -253,14 +259,13 @@ with tab_orden:
         with col_title_1:
              st.subheader("Datos de la Orden")
         with col_title_2:
-            # Reemplazamos st.subheader(f"Nueva Orden de Trabajo N°: {orden_actual}")
-            # por un input editable:
             st.session_state.current_orden_nro_input = st.number_input(
                 "**Número de Orden** (Editable)", 
                 min_value=1,
                 value=int(st.session_state.current_orden_nro_input),
                 step=1,
-                key='orden_nro_input'
+                key='orden_nro_input',
+                help="Puedes cambiar el número si necesitas reasignar un consecutivo."
             )
             
         col1, col2, col3 = st.columns(3)
@@ -295,7 +300,7 @@ with tab_orden:
         
         opciones_elaboro = [data["display"] for data in st.session_state.directorio_personal["Elaboro"].values()]
         opciones_reviso = [data["display"] for data in st.session_state.directorio_personal["Reviso"].values()]
-        opciones_responsable = opciones_elaboro + opciones_reviso
+        opciones_responsable = sorted(list(set(opciones_elaboro + opciones_reviso)))
         
         responsable_designado = st.selectbox(
             "Responsable Designado para la Ejecución", 
@@ -340,7 +345,9 @@ with tab_orden:
 
         if submit_button:
             
-            # Validación de Números: Asegurar que el Número de Orden sea un entero positivo
+            # --- Validaciones ---
+            
+            # 1. Validación de Número de Orden
             try:
                 orden_nro_final = int(st.session_state.current_orden_nro_input)
                 if orden_nro_final <= 0:
@@ -350,14 +357,13 @@ with tab_orden:
                 st.error("El Número de Orden debe ser un número entero válido.")
                 st.stop()
                 
-            # Validación de Solicitud N°
+            # 2. Validación de Solicitud N°
             solicitud_nro_final = st.session_state.current_solicitud_nro_input
             if not solicitud_nro_final.startswith('09-') or not solicitud_nro_final.split('-')[-1].isdigit():
                 st.error("El Número de Solicitud debe seguir el formato '09-XX'.")
                 st.stop()
                 
-            
-            # Validación de duplicados (opcional, pero útil)
+            # 3. Validación de duplicados (Revisar si los números ya existen en el historial)
             nros_existentes = [d["Número de Orden"] for d in st.session_state.orden_data]
             solicitudes_existentes = [d["Solicitud N°"] for d in st.session_state.orden_data]
             
@@ -368,29 +374,31 @@ with tab_orden:
             if solicitud_nro_final in solicitudes_existentes:
                  st.error(f"El Número de Solicitud **{solicitud_nro_final}** ya existe. Por favor, elige otro o revísalo.")
                  st.stop()
-
-
+                 
+            # 4. Validación de contenido
             if not motivo_orden or not materiales:
                 st.error("Por favor, completa el Motivo de la Orden y al menos un ítem de Materiales (Cantidad > 0).")
-            else:
-                nueva_orden = {
-                    "Número de Orden": orden_nro_final,
-                    "Solicitud N°": solicitud_nro_final,
-                    "Fecha": fecha_actual,
-                    "Dependencia Solicitante": dependencia_selected,
-                    "Servicio Aplicado": servicio_solicitud,
-                    "Responsable Designado": responsable_designado,
-                    "Motivo": motivo_orden,
-                    "Tipo de Mantenimiento": tipo_mant,
-                    "Materiales Solicitados": "; ".join(materiales),
-                    "Elaboró": elaboro,
-                    "Revisó": reviso,
-                    "Aprobó": aprobo
-                }
-                guardar_orden(nueva_orden)
-                st.session_state.ultima_orden_guardada = nueva_orden
-                orden_guardada_recientemente = True
-                st.experimental_rerun() # Recargar para que los inputs muestren el nuevo consecutivo
+                st.stop()
+            
+            # --- Guardar ---
+            nueva_orden = {
+                "Número de Orden": orden_nro_final,
+                "Solicitud N°": solicitud_nro_final,
+                "Fecha": fecha_actual,
+                "Dependencia Solicitante": dependencia_selected,
+                "Servicio Aplicado": servicio_solicitud,
+                "Responsable Designado": responsable_designado,
+                "Motivo": motivo_orden,
+                "Tipo de Mantenimiento": tipo_mant,
+                "Materiales Solicitados": "; ".join(materiales),
+                "Elaboró": elaboro,
+                "Revisó": reviso,
+                "Aprobó": aprobo
+            }
+            guardar_orden(nueva_orden)
+            st.session_state.ultima_orden_guardada = nueva_orden
+            orden_guardada_recientemente = True
+            st.experimental_rerun() # Recargar para que los inputs muestren el nuevo consecutivo
 
     # Botón para descargar/imprimir la última orden guardada
     if st.session_state.get('ultima_orden_guardada') and orden_guardada_recientemente:
@@ -410,7 +418,7 @@ with tab_orden:
 
 
 # -------------------------------------------------------------------------
-# === PESTAÑA 2: HISTORIAL Y DESCARGA (SIN CAMBIOS) ===
+# === PESTAÑA 2: HISTORIAL Y DESCARGA (Ahora en Excel) ===
 # -------------------------------------------------------------------------
 with tab_historial:
     st.header("Historial de Órdenes Guardadas")
@@ -419,13 +427,13 @@ with tab_historial:
         df = pd.DataFrame(st.session_state.orden_data)
         st.dataframe(df, use_container_width=True)
         
-        # Descarga (CSV)
-        csv = convert_df_to_csv(df)
+        # Descarga (Excel)
+        excel_data = convert_df_to_excel(df)
         st.download_button(
-            label="⬇️ Descargar Historial Completo (CSV)",
-            data=csv,
-            file_name=f'Ordenes_Mantenimiento_{date.today().strftime("%Y%m%d")}.csv',
-            mime='text/csv',
+            label="⬇️ Descargar Historial Completo (Excel XLSX)",
+            data=excel_data,
+            file_name=f'Ordenes_Mantenimiento_{date.today().strftime("%Y%m%d")}.xlsx',
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', # Nuevo MIME type para XLSX
         )
         
     else:
@@ -433,12 +441,12 @@ with tab_historial:
 
 
 # -------------------------------------------------------------------------
-# === PESTAÑA 3: GESTIÓN DE PERSONAL (SIN CAMBIOS) ===
+# === PESTAÑA 3: GESTIÓN DE PERSONAL ===
 # -------------------------------------------------------------------------
 with tab_personal:
     st.header("Administración de Personal y Firmantes")
     
-    # 1. FORMULARIO PARA AGREGAR PERSONAL (Se mantiene igual)
+    # 1. FORMULARIO PARA AGREGAR PERSONAL 
     st.info("Ingresa el Nombre, el Cargo y el Número de Identificación. El sistema los combinará.")
     with st.form("form_agregar_personal"):
         st.subheader("Agregar Nuevo Empleado/Firmante")
@@ -511,7 +519,6 @@ with tab_personal:
             
             # Asegurar que la clave del rol exista
             if rol_key not in nuevo_directorio:
-                 # Manejar el caso de un rol no válido, aunque debería ser difícil por el selectbox
                  st.warning(f"Rol '{row['Rol de Firma']}' no válido. Omitiendo empleado.")
                  continue
 
