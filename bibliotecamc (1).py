@@ -442,8 +442,9 @@ with tab_orden:
                 st.error("El Número de Solicitud debe seguir el formato '09-XX'.")
                 st.stop()
                 
-            # 3. Validación de duplicados (Revisar si los números ya existen en el historial)
-            nros_existentes = [d["Número de Orden"] for d d in st.session_state.orden_data]
+           # 3. Validación de duplicados (Revisar si los números ya existen en el historial)
+            # --- LÍNEA CORREGIDA ABAJO ---
+            nros_existentes = [d["Número de Orden"] for d in st.session_state.orden_data]
             solicitudes_existentes = [d["Solicitud N°"] for d in st.session_state.orden_data]
             
             if orden_nro_final in nros_existentes:
