@@ -22,11 +22,25 @@ SERVICIOS_SOLICITUD = [
     "FISIOTERAPIA", "P Y P", "LABORATORIO", "GASTROENTEROLOGÍA", "OTRO"
 ]
 
-# Directorio de Trabajadores/Firmantes INICIAL (Las claves son sin acento: Elaboro, Reviso, Aprobo)
+# Directorio de Trabajadores/Firmantes INICIAL
+# ## CAMBIO: La estructura de los datos del personal cambia a un diccionario
+# ## CAMBIO: El valor será ahora un diccionario con 'display' y 'cc'
+# {Rol: {Nombre_Profesion: {"display": "Nombre - Profesión", "cc": "123456"}}}
+
 DIRECTORIO_TRABAJADORES_INICIAL = {
-    "Elaboro": ["Magaly Gómez - Técnica", "Oscar Muñoz - Operario"],
-    "Reviso": ["Danna Hernandez - Coordinadora Mantenimiento", "Hery Peña - Biomédico", "Jefe de Mantenimiento - Ingeniería"],
-    "Aprobo": ["Gerente de Operaciones - Gerente", "Jefe de Almacén - Logística"] # <-- Clave 'Aprobo'
+    "Elaboro": {
+        "Magaly Gómez - Técnica": {"display": "Magaly Gómez - Técnica", "cc": "111111"},
+        "Oscar Muñoz - Operario": {"display": "Oscar Muñoz - Operario", "cc": "222222"}
+    },
+    "Reviso": {
+        "Danna Hernandez - Coordinadora Mantenimiento": {"display": "Danna Hernandez - Coordinadora Mantenimiento", "cc": "333333"},
+        "Hery Peña - Biomédico": {"display": "Hery Peña - Biomédico", "cc": "444444"},
+        "Jefe de Mantenimiento - Ingeniería": {"display": "Jefe de Mantenimiento - Ingeniería", "cc": "555555"}
+    },
+    "Aprobo": {
+        "Gerente de Operaciones - Gerente": {"display": "Gerente de Operaciones - Gerente", "cc": "666666"},
+        "Jefe de Almacén - Logística": {"display": "Jefe de Almacén - Logística", "cc": "777777"}
+    }
 }
 
 # Inicializar el estado de la sesión
@@ -59,16 +73,20 @@ def guardar_orden(nueva_orden):
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-def agregar_personal(rol, nombre, profesion):
-    nombre_completo = f"{nombre} - {profesion}"
-    if nombre_completo and rol:
-        if nombre_completo not in st.session_state.directorio_personal[rol]:
-            st.session_state.directorio_personal[rol].append(nombre_completo)
-            st.session_state.directorio_personal[rol].sort()
-            st.success(f"➕ **{nombre_completo}** agregado a la lista de **{rol}**.")
+## CAMBIO: Se modifica la función para recibir el 'cc' y guardarlo en el diccionario anidado.
+def agregar_personal(rol, nombre, profesion, cc):
+    nombre_key = f"{nombre} - {profesion}"
+    if nombre_key and rol:
+        if nombre_key not in st.session_state.directorio_personal[rol]:
+            st.session_state.directorio_personal[rol][nombre_key] = {"display": nombre_key, "cc": cc}
+            # Opcional: Para ordenar visualmente las claves del diccionario
+            sorted_keys = sorted(st.session_state.directorio_personal[rol].keys())
+            st.session_state.directorio_personal[rol] = {k: st.session_state.directorio_personal[rol][k] for k in sorted_keys}
+            st.success(f"➕ **{nombre_key}** (C.C. {cc}) agregado a la lista de **{rol}**.")
         else:
-            st.warning(f"⚠️ **{nombre_completo}** ya existe en la lista de **{rol}**.")
+            st.warning(f"⚠️ **{nombre_key}** ya existe en la lista de **{rol}**.")
 
+## CAMBIO: Se modifica la función para incluir el C.C. en el HTML.
 def generar_html_orden(orden):
     """Genera una página HTML estructurada para la impresión a PDF, incluyendo el logo."""
     
@@ -84,8 +102,26 @@ def generar_html_orden(orden):
             else:
                  materiales_html += f"<tr><td>{item}</td><td></td><td>N/A</td></tr>"
     except Exception:
-         materiales_html = "<tr><td colspan='3'>Error al cargar detalles de materiales.</td></tr>"
+          materiales_html = "<tr><td colspan='3'>Error al cargar detalles de materiales.</td></tr>"
 
+    # Obtener C.C. del personal de firma
+    # Se debe buscar la información completa del personal en el directorio
+    
+    # Función de ayuda para buscar el CC del firmante.
+    def get_cc(rol, display_name):
+        directorio = st.session_state.directorio_personal.get(rol, {})
+        # Buscamos la clave del directorio que coincide con el 'display_name' guardado
+        # Iteramos sobre las claves (nombre - profesión) para encontrar la coincidencia.
+        for key, value in directorio.items():
+            if value["display"] == display_name:
+                return value["cc"]
+        return "N/A"
+
+    elaboro_cc = get_cc("Elaboro", orden['Elaboró'])
+    reviso_cc = get_cc("Reviso", orden['Revisó'])
+    aprobo_cc = get_cc("Aprobo", orden['Aprobó'])
+
+    # El código HTML se mantiene similar, pero se añade el C.C.
 
     html_content = f"""
     <!DOCTYPE html>
@@ -102,7 +138,8 @@ def generar_html_orden(orden):
             th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
             th {{ background-color: #f2f2f2; }}
             .signature-area {{ display: flex; justify-content: space-around; margin-top: 40px; text-align: center; }}
-            .signature-box {{ width: 30%; border-top: 1px solid #000; padding-top: 5px; }}
+            .signature-box {{ width: 30%; padding-top: 5px; }}
+            .signature-line {{ border-top: 1px solid #000; padding-top: 5px; display: inline-block; width: 80%; }}
         </style>
     </head>
     <body>
@@ -138,15 +175,21 @@ def generar_html_orden(orden):
 
         <div class="signature-area">
             <div class="signature-box">
+                <div class="signature-line"></div><br>
                 {orden['Elaboró']}<br>
+                **C.C.: {elaboro_cc}**<br>
                 Elaboró
             </div>
             <div class="signature-box">
+                <div class="signature-line"></div><br>
                 {orden['Revisó']}<br>
+                **C.C.: {reviso_cc}**<br>
                 Revisó
             </div>
             <div class="signature-box">
+                <div class="signature-line"></div><br>
                 {orden['Aprobó']}<br>
+                **C.C.: {aprobo_cc}**<br>
                 Aprobó
             </div>
         </div>
@@ -156,7 +199,10 @@ def generar_html_orden(orden):
     """
     # Codificar el HTML para incrustarlo en un enlace data URI
     b64_html = base64.b64encode(html_content.encode('utf-8')).decode()
-    return f'<a href="data:text/html;base64,{b64_html}" target="_blank" style="text-decoration: none; padding: 10px; background-color: #4CAF50; color: white; border-radius: 5px;">📄 Abrir Orden para Imprimir a PDF</a>'
+    
+    ## CAMBIO: El enlace genera un archivo PDF al nombrarlo '.pdf', aunque usa la función de impresión de HTML.
+    ## Esto es para mejorar la experiencia del usuario y que se vea el nombre de archivo sugerido.
+    return f'<a href="data:text/html;base64,{b64_html}" download="Orden_Mantenimiento_N_{orden["Número de Orden"]}.pdf" target="_blank" style="text-decoration: none; padding: 10px; background-color: #4CAF50; color: white; border-radius: 5px;">⬇️ Descargar/Abrir Orden para Imprimir a PDF</a>'
 
 
 # =========================================================================
@@ -203,7 +249,11 @@ with tab_orden:
 
         # --- Campo de Responsable (Flexible) ---
         st.markdown("### Responsable Designado")
-        opciones_responsable = st.session_state.directorio_personal["Elaboro"] + st.session_state.directorio_personal["Reviso"]
+        
+        ## CAMBIO: Obtener solo el valor 'display' (Nombre - Profesión) para la selección
+        opciones_elaboro = [data["display"] for data in st.session_state.directorio_personal["Elaboro"].values()]
+        opciones_reviso = [data["display"] for data in st.session_state.directorio_personal["Reviso"].values()]
+        opciones_responsable = opciones_elaboro + opciones_reviso
         
         responsable_designado = st.selectbox(
             "Responsable Designado para la Ejecución", 
@@ -231,14 +281,17 @@ with tab_orden:
 
         # --- Firmas/Roles de Flujo ---
         st.subheader("Personal de Flujo y Firmas")
+        
+        ## CAMBIO: Obtener solo el valor 'display' para los selectbox
+        opciones_aprobo = [data["display"] for data in st.session_state.directorio_personal["Aprobo"].values()]
+        
         col_e, col_r, col_a = st.columns(3)
         with col_e:
-            elaboro = st.selectbox("Elaboró", options=st.session_state.directorio_personal["Elaboro"])
+            elaboro = st.selectbox("Elaboró", options=opciones_elaboro)
         with col_r:
-            reviso = st.selectbox("Revisó", options=st.session_state.directorio_personal["Reviso"])
+            reviso = st.selectbox("Revisó", options=opciones_reviso)
         with col_a:
-            # CORRECCIÓN: Usar la clave sin acento "Aprobo"
-            aprobo = st.selectbox("Aprobó", options=st.session_state.directorio_personal["Aprobo"])
+            aprobo = st.selectbox("Aprobó", options=opciones_aprobo)
 
         st.markdown("---")
         
@@ -275,7 +328,7 @@ with tab_orden:
             generar_html_orden(st.session_state.ultima_orden_guardada), 
             unsafe_allow_html=True
         )
-        st.info("Presiona el botón para abrir la orden en una nueva ventana. Luego usa **CTRL+P** o 'Imprimir' y selecciona **'Guardar como PDF'** en tu navegador para generar el archivo final con el logo.")
+        st.info("Presiona el botón para abrir la orden en una nueva ventana. Luego usa **CTRL+P** o 'Imprimir' y selecciona **'Guardar como PDF'** en tu navegador para generar el archivo final con el logo y el C.C.")
 
 
 # -------------------------------------------------------------------------
@@ -306,16 +359,18 @@ with tab_historial:
 # -------------------------------------------------------------------------
 with tab_personal:
     st.header("Administración de Personal y Firmantes")
-    st.info("Ingresa el Nombre y la Profesión/Cargo. El sistema los combinará en la lista de selección.")
+    st.info("Ingresa el Nombre, el Cargo y el Número de Identificación. El sistema los combinará.")
     
     with st.form("form_agregar_personal"):
         st.subheader("Agregar Nuevo Empleado/Firmante")
         
-        col_n, col_p = st.columns(2)
+        col_n, col_p, col_c = st.columns(3) ## CAMBIO: Nueva columna para C.C.
         with col_n:
             nombre_nuevo = st.text_input("Nombre Completo")
         with col_p:
-            profesion_nueva = st.text_input("Profesión / Cargo (Ej: Técnico, Biomédico, Ing. Civil)")
+            profesion_nueva = st.text_input("Profesión / Cargo (Ej: Técnico, Biomédico)")
+        with col_c: ## CAMBIO: Campo de entrada para C.C.
+            cc_nuevo = st.text_input("Número de Identificación (C.C.)", max_chars=15)
             
         rol_a_modificar = st.selectbox(
             "Selecciona el Rol de Firma que tendrá",
@@ -325,21 +380,25 @@ with tab_personal:
         agregar_button = st.form_submit_button("Agregar a la Lista")
         
         if agregar_button:
-            if nombre_nuevo and profesion_nueva:
-                agregar_personal(rol_a_modificar, nombre_nuevo, profesion_nueva)
+            if nombre_nuevo and profesion_nueva and cc_nuevo: ## CAMBIO: Se valida cc_nuevo
+                agregar_personal(rol_a_modificar, nombre_nuevo, profesion_nueva, cc_nuevo)
             else:
-                st.error("Debes ingresar tanto el Nombre como la Profesión/Cargo.")
+                st.error("Debes ingresar el Nombre, la Profesión/Cargo y el Número de Identificación.")
 
     st.markdown("---")
     
-    st.subheader("Directorio de Firmantes Actual (Nombre - Profesión/Cargo)")
+    st.subheader("Directorio de Firmantes Actual")
     
     data_mostrar = []
-    for rol, personas in st.session_state.directorio_personal.items():
-        # Aquí se muestra el rol sin acento, que es la clave real
-        nombre_rol_display = rol.replace('o', 'ó').replace('e', 'é') # Ajuste visual para el usuario
-        for persona in personas:
-            data_mostrar.append({"Rol de Firma": nombre_rol_display, "Nombre - Cargo": persona})
+    for rol, personas_dict in st.session_state.directorio_personal.items(): ## CAMBIO: Se itera sobre el diccionario anidado
+        nombre_rol_display = rol.replace('o', 'ó').replace('e', 'é')
+        
+        for key, data in personas_dict.items():
+            data_mostrar.append({
+                "Rol de Firma": nombre_rol_display, 
+                "Nombre - Cargo": data["display"], 
+                "C.C.": data["cc"] ## CAMBIO: Se añade el C.C. para mostrar en el directorio.
+            })
             
     df_directorio = pd.DataFrame(data_mostrar)
     st.dataframe(df_directorio, use_container_width=True, hide_index=True)
