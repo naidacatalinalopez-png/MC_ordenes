@@ -17,7 +17,8 @@ def generar_solicitud_nro(current_num):
 # =========================================================================
 
 # URL del Logo proporcionada por el usuario
-LOGO_URL = "https://yt3.googleusercontent.com/ytc/AIdro_mbSWHDUC7Kw_vwBstPvA2M0-SynIdMOdiq1oLmPP6RAGw=s900-c-k-c0x00ffffff-no-rj"
+# (Se asume que esta URL funciona o debe ser reemplazada por una base64 si se usa localmente)
+LOGO_URL = "https://yt3.googleusercontent.com/ytc/AIdro_mbSWHDUC7Kw_vwBstPvA2M0-SynIdMOdiq1oLmPP6RAGw=s900-c-k-c0x00ffffff-no-rj" 
 
 # Listas de Opciones Fijas
 DEPENDENCIAS = ["Electrico", "Infraestructura", "Biomedico", "Otro"]
@@ -68,8 +69,7 @@ if 'current_orden_nro_input' not in st.session_state:
 if 'current_solicitud_nro_input' not in st.session_state:
     st.session_state.current_solicitud_nro_input = generar_solicitud_nro(st.session_state.siguiente_solicitud_numero)
 
-# --- CORRECCIÓN CLAVE ---
-# Bandera de control para la descarga. Debe estar en st.session_state para sobrevivir al st.rerun()
+# Bandera de control para la descarga (CORREGIDO: debe estar en session_state)
 if 'mostrar_descarga_ultima_orden' not in st.session_state:
     st.session_state.mostrar_descarga_ultima_orden = False
 # ---------------------------------------------
@@ -111,7 +111,7 @@ def guardar_orden(nueva_orden):
 def convert_df_to_excel(df):
     """Convierte un DataFrame a un archivo Excel (xlsx) en memoria."""
     output = io.BytesIO()
-    # Usamos openpyxl como motor por defecto para xlsx
+    # Requiere la librería 'openpyxl' instalada en el entorno
     df.to_excel(output, index=False, sheet_name='Ordenes_Mantenimiento')
     processed_data = output.getvalue()
     return processed_data
@@ -127,9 +127,9 @@ def agregar_personal(rol, nombre, profesion, cc):
         else:
             st.warning(f"⚠️ **{nombre_key}** ya existe en la lista de **{rol}**.")
 
-# Función para generar solo el HTML 
+# Función para generar solo el HTML (AJUSTADA A LA ESTÉTICA SOLICITADA)
 def generar_html_orden(orden):
-    """Genera una página HTML estructurada para la impresión a PDF, incluyendo el logo."""
+    """Genera una página HTML estructurada para la impresión a PDF, incluyendo el logo y formato institucional."""
     
     # Función de ayuda para buscar el CC del firmante.
     def get_cc(rol, display_name):
@@ -141,18 +141,38 @@ def generar_html_orden(orden):
 
     # --- Procesamiento de Materiales ---
     materiales_html = ""
+    # El formato del material es: "1. Item (Cantidad Unidad); 2. Otro (Cantidad Unidad)"
     try:
         if orden['Materiales Solicitados']:
-            for item_full in orden['Materiales Solicitados'].split('; '):
-                parts = item_full.strip().split(' (', 1)
-                nombre_material = parts[0].split('. ', 1)[-1].strip()
-                cantidad_unidad = parts[1].replace(')', '') if len(parts) > 1 else 'N/A'
-                materiales_html += f"<tr><td>{nombre_material}</td><td></td><td>{cantidad_unidad}</td></tr>"
+            items_raw = orden['Materiales Solicitados'].split('; ')
+            for item_full in items_raw:
+                if not item_full: continue # Saltar si está vacío
+                
+                # Intentar parsear el formato: "1. Nombre (Cantidad Unidad)"
+                try:
+                    # Separar el número y el nombre
+                    nombre_y_resto = item_full.split('. ', 1)[-1].strip()
+                    
+                    # Separar el nombre del material y la cantidad/unidad
+                    parts = nombre_y_resto.rsplit(' (', 1)
+                    nombre_material = parts[0].strip()
+                    cantidad_unidad = parts[1].replace(')', '').strip() if len(parts) > 1 else 'N/A'
+                    
+                    # Separar la cantidad de la unidad (Ej: "5 UNIDAD" -> 5 / UNIDAD)
+                    cantidad_parts = cantidad_unidad.split(' ', 1)
+                    cantidad = cantidad_parts[0]
+                    unidad = cantidad_parts[1] if len(cantidad_parts) > 1 else 'UNIDAD'
+
+                    materiales_html += f"<tr><td>{nombre_material}</td><td>{unidad}</td><td>{cantidad}</td><td></td><td></td><td></td></tr>"
+                except Exception:
+                    # Fallback si el parsing falla (pone todo en DETALLE)
+                    materiales_html += f"<tr><td>{item_full}</td><td>N/A</td><td>N/A</td><td></td><td></td><td></td></tr>"
         else:
-            materiales_html = "<tr><td colspan='3'>No se solicitaron materiales.</td></tr>"
+            # Asegurar que haya 3 filas vacías si no hay materiales, para mantener la estética
+            materiales_html = "".join(["<tr><td></td><td></td><td></td><td></td><td></td><td></td></tr>"] * 3)
             
     except Exception:
-        materiales_html = "<tr><td colspan='3'>Error al cargar detalles de materiales.</td></tr>"
+        materiales_html = "".join(["<tr><td>Error al cargar</td><td></td><td></td><td></td><td></td><td></td></tr>"] * 3)
 
     # --- Obtener C.C. del personal de firma ---
     elaboro_cc = get_cc("Elaboro", orden['Elaboró'])
@@ -160,17 +180,23 @@ def generar_html_orden(orden):
     aprobo_cc = get_cc("Aprobo", orden['Aprobó'])
     
     style_content = """
-        body { font-family: Arial, sans-serif; font-size: 10pt; padding: 20px; }
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }
-        .header img { max-width: 100px; height: auto; border-radius: 50%; }
-        .header-info { text-align: right; }
-        h2 { color: #333; margin-top: 5px; }
-        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-        th { background-color: #f2f2f2; }
-        .signature-area { display: flex; justify-content: space-around; margin-top: 40px; text-align: center; }
-        .signature-box { width: 30%; padding-top: 5px; }
-        .signature-line { border-top: 1px solid #000; padding-top: 5px; display: inline-block; width: 80%; }
+        body { font-family: Arial, sans-serif; font-size: 9pt; padding: 10px 20px; }
+        .container { border: 1px solid #000; padding: 0; }
+        h2, h3 { color: #333; margin: 0; padding: 0; text-align: center; font-size: 11pt; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 5px; }
+        th, td { border: 1px solid #000; padding: 4px; text-align: left; font-size: 9pt; vertical-align: middle; }
+        th { background-color: #f0f0f0; text-align: center; font-weight: bold; }
+        .header-table td { border: none; padding: 2px 4px; font-size: 8pt; }
+        .logo-cell { width: 15%; text-align: center; }
+        .logo-cell img { max-width: 80px; height: auto; }
+        .title-cell { width: 50%; text-align: center; font-size: 12pt; font-weight: bold; }
+        .info-cell { width: 35%; }
+        .info-table td { border: 1px solid #000; padding: 4px; }
+        .signature-area { display: flex; justify-content: space-around; margin-top: 20px; text-align: center; }
+        .signature-box { width: 30%; padding-top: 5px; margin-top: 15px; }
+        .signature-line { border-top: 1px solid #000; padding-top: 5px; margin-bottom: 5px; }
+        .firma-info { font-size: 8pt; }
+        .celda-vacia { height: 20px; }
     """
 
     html_content = f"""
@@ -184,56 +210,103 @@ def generar_html_orden(orden):
     </head>
     <body>
 
-        <div class="header">
-            <img src="{LOGO_URL}" alt="Logo del Hospital">
-            <div class="header-info">
-                <h2>HOSPITAL REGIONAL ALFONSO JARAMILLO SALAZAR</h2>
-                <strong>ORDEN DE MANTENIMIENTO</strong><br>
-                Código: GTAF-A-05-P-EEC-FPA-01
+        <div class="container">
+            <table class="header-table">
+                <tr>
+                    <td rowspan="4" class="logo-cell" style="border-right: 1px solid #000;">
+                        <img src="{LOGO_URL}" alt="Logo del Hospital">
+                    </td>
+                    <td colspan="2" class="title-cell" style="border-bottom: 1px solid #000;">
+                        HOSPITAL REGIONAL ALFONSO JARAMILLO SALAZAR
+                    </td>
+                    <td class="info-cell" style="width: 20%;">
+                        <strong>Código:</strong> GTAF-A-05-P-EEC-FPA-01
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="title-cell" style="border-bottom: 1px solid #000;">
+                        GESTIÓN DE LA TECNOLOGÍA Y DEL AMBIENTE FÍSICO
+                    </td>
+                    <td class="info-cell">
+                        <strong>Versión:</strong> 02
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2" class="title-cell">
+                        FORMATO: ORDEN DE MANTENIMIENTO
+                    </td>
+                    <td class="info-cell">
+                        <strong>Fecha Aprobación:</strong> 2014/01/02
+                    </td>
+                </tr>
+            </table>
+
+            <table>
+                <tr>
+                    <td style="width: 50%;"><strong>DEPENDENCIA SOLICITANTE:</strong> {orden['Dependencia Solicitante']}</td>
+                    <td style="width: 25%;"><strong>FECHA:</strong> {orden['Fecha']}</td>
+                    <td style="width: 25%;"><strong>SOLICITUD N°:</strong> {orden['Solicitud N°']}</td>
+                </tr>
+                <tr>
+                    <td colspan="3"><strong>SERVICIO APLICADO:</strong> {orden['Servicio Aplicado']}</td>
+                </tr>
+                <tr>
+                    <td colspan="3" class="celda-vacia"></td>
+                </tr>
+                <tr>
+                    <td colspan="3" style="text-align: center; background-color: #f0f0f0;"><strong>ORDEN DE MANTENIMIENTO N°:</strong> {orden['Número de Orden']}</td>
+                </tr>
+                <tr>
+                    <td colspan="3"><strong>RESPONSABLE DESIGNADO:</strong> {orden['Responsable Designado']}</td>
+                </tr>
+                <tr>
+                    <td colspan="3"><strong>TIPO DE MANTENIMIENTO:</strong> {orden['Tipo de Mantenimiento']}</td>
+                </tr>
+                <tr>
+                    <td colspan="3"><strong>MOTIVO / DESCRIPCIÓN DEL TRABAJO:</strong> {orden['Motivo']}</td>
+                </tr>
+            </table>
+
+            <h3>MATERIALES SOLICITADOS (PEDIDO ALMACÉN)</h3>
+            <table>
+                <tr>
+                    <th style="width: 35%;">DETALLE</th>
+                    <th style="width: 15%;">UNIDAD DE MEDIDA</th>
+                    <th style="width: 10%;">CANTIDAD PEDIDA</th>
+                    <th style="width: 10%;">CANTIDAD DESPACHADA</th>
+                    <th style="width: 10%;">VALOR UNITARIO</th>
+                    <th style="width: 20%;">VALOR TOTAL</th>
+                </tr>
+                {materiales_html}
+            </table>
+            
+            <div style="padding: 5px;">
+                <p style="font-size: 9pt;"><strong>OBSERVACIONES / CONCLUSIONES:</strong> __________________________________________________________________________________________________________________________________________________________</p>
+                
+                <table style="margin-top: 15px; border: none;">
+                    <tr style="border: none;">
+                        <td style="width: 33%; border: 1px solid #000; text-align: center; padding-bottom: 15px;">
+                            <div class="signature-line"></div>
+                            <span class="firma-info"><strong>ELABORÓ:</strong> {orden['Elaboró']}</span><br>
+                            <span class="firma-info">C.C.: {elaboro_cc}</span>
+                        </td>
+                        <td style="width: 34%; border: 1px solid #000; text-align: center; padding-bottom: 15px;">
+                            <div class="signature-line"></div>
+                            <span class="firma-info"><strong>REVISÓ:</strong> {orden['Revisó']}</span><br>
+                            <span class="firma-info">C.C.: {reviso_cc}</span>
+                        </td>
+                        <td style="width: 33%; border: 1px solid #000; text-align: center; padding-bottom: 15px;">
+                            <div class="signature-line"></div>
+                            <span class="firma-info"><strong>APROBÓ:</strong> {orden['Aprobó']}</span><br>
+                            <span class="firma-info">C.C.: {aprobo_cc}</span>
+                        </td>
+                    </tr>
+                </table>
+                <p style="margin-top: 10px; font-size: 9pt; border: 1px solid #000; padding: 5px;">RECIBIDO POR: ____________________________________________________________________ C.C.: _______________________________________________________________________</p>
+
             </div>
+            
         </div>
-
-        <h3>DATOS DE LA ORDEN</h3>
-        <table>
-            <tr><th>Número de Orden</th><td>{orden['Número de Orden']}</td><th>Fecha</th><td>{orden['Fecha']}</td></tr>
-            <tr><th>Solicitud N°</th><td>{orden['Solicitud N°']}</td><th>Dependencia Solicitante</th><td>{orden['Dependencia Solicitante']}</td></tr>
-            <tr><th>Servicio Aplicado</th><td colspan="3">{orden['Servicio Aplicado']}</td></tr>
-            <tr><th>Responsable Designado</th><td colspan="3">{orden['Responsable Designado']}</td></tr>
-            <tr><th>Tipo de Mantenimiento</th><td colspan="3">{orden['Tipo de Mantenimiento']}</td></tr>
-        </table>
-        
-        <h3>MOTIVO DE LA ORDEN</h3>
-        <table>
-            <tr><td colspan="3">{orden['Motivo']}</td></tr>
-        </table>
-
-        <h3>MATERIALES SOLICITADOS</h3>
-        <table>
-            <tr><th>DETALLE</th><th>VALOR UNITARIO</th><th>CANTIDAD Y UNIDAD</th></tr>
-            {materiales_html}
-        </table>
-
-        <div class="signature-area">
-            <div class="signature-box">
-                <div class="signature-line"></div><br>
-                {orden['Elaboró']}<br>
-                **C.C.: {elaboro_cc}**<br>
-                Elaboró
-            </div>
-            <div class="signature-box">
-                <div class="signature-line"></div><br>
-                {orden['Revisó']}<br>
-                **C.C.: {reviso_cc}**<br>
-                Revisó
-            </div>
-            <div class="signature-box">
-                <div class="signature-line"></div><br>
-                {orden['Aprobó']}<br>
-                **C.C.: {aprobo_cc}**<br>
-                Aprobó
-            </div>
-        </div>
-        <p style="margin-top: 50px;">Recibido por: ___________________________________ C.C.: ______________________</p>
     </body>
     </html>
     """
@@ -253,8 +326,8 @@ tab_orden, tab_historial, tab_personal = st.tabs(["📝 Nueva Orden", "📊 Hist
 # -------------------------------------------------------------------------
 with tab_orden:
     
-    # Reiniciar la bandera si no venimos de guardar una orden
-    if 'ultima_orden_guardada' not in st.session_state:
+    # Reiniciar la bandera si no venimos de guardar una orden (evita que la sección aparezca al inicio)
+    if 'ultima_orden_guardada' not in st.session_state and st.session_state.mostrar_descarga_ultima_orden:
         st.session_state.mostrar_descarga_ultima_orden = False
 
 
@@ -370,7 +443,7 @@ with tab_orden:
                 st.stop()
                 
             # 3. Validación de duplicados (Revisar si los números ya existen en el historial)
-            nros_existentes = [d["Número de Orden"] for d in st.session_state.orden_data]
+            nros_existentes = [d["Número de Orden"] for d d in st.session_state.orden_data]
             solicitudes_existentes = [d["Solicitud N°"] for d in st.session_state.orden_data]
             
             if orden_nro_final in nros_existentes:
@@ -426,9 +499,10 @@ with tab_orden:
         )
         st.info("💡 **Instrucción:** Descarga el archivo **HTML**, ábrelo con tu navegador (doble clic) y luego usa **CTRL+P** o 'Imprimir' para seleccionar **'Guardar como PDF'** y obtener el documento final con el logo y el C.C.")
         
-        # Opcional: Agregar un botón para borrar la sección de descarga y limpiar el estado
+        # Botón para borrar la sección de descarga y limpiar el estado
         if st.button("Crear una Nueva Orden (Limpiar sección de descarga)"):
-            del st.session_state.ultima_orden_guardada
+            if 'ultima_orden_guardada' in st.session_state:
+                del st.session_state.ultima_orden_guardada
             st.session_state.mostrar_descarga_ultima_orden = False
             st.rerun()
 
