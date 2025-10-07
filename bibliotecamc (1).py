@@ -66,22 +66,22 @@ def guardar_orden(nueva_orden):
     st.success(f"✅ Orden de Mantenimiento #{nueva_orden['Número de Orden']} guardada con éxito.")
 
 @st.cache_data
+# MODIFICACIÓN CLAVE: Se añade encoding='utf-8-sig' para asegurar la compatibilidad con acentos en Excel
 def convert_df_to_csv(df):
-    return df.to_csv(index=False).encode('utf-8')
+    return df.to_csv(index=False).encode('utf-8-sig')
 
 def agregar_personal(rol, nombre, profesion, cc):
     nombre_key = f"{nombre} - {profesion}"
     if nombre_key and rol:
         if nombre_key not in st.session_state.directorio_personal[rol]:
             st.session_state.directorio_personal[rol][nombre_key] = {"display": nombre_key, "cc": cc}
-            # Opcional: Para ordenar visualmente las claves del diccionario
             sorted_keys = sorted(st.session_state.directorio_personal[rol].keys())
             st.session_state.directorio_personal[rol] = {k: st.session_state.directorio_personal[rol][k] for k in sorted_keys}
             st.success(f"➕ **{nombre_key}** (C.C. {cc}) agregado a la lista de **{rol}**.")
         else:
             st.warning(f"⚠️ **{nombre_key}** ya existe en la lista de **{rol}**.")
 
-## MODIFICACIÓN CLAVE: Esta función ahora solo devuelve la cadena HTML.
+# Función para generar solo el HTML
 def generar_html_orden(orden):
     """Genera una página HTML estructurada para la impresión a PDF, incluyendo el logo."""
     
@@ -305,12 +305,11 @@ with tab_orden:
                 st.session_state.ultima_orden_guardada = nueva_orden
                 orden_guardada_recientemente = True
 
-    # Botón para descargar/imprimir la última orden guardada (Opción 2)
+    # Botón para descargar/imprimir la última orden guardada
     if st.session_state.get('ultima_orden_guardada') and orden_guardada_recientemente:
         st.markdown("---")
         st.subheader(f"Orden #{st.session_state.ultima_orden_guardada['Número de Orden']} lista para descargar:")
         
-        # Generar el HTML (solo la cadena de texto)
         html_content = generar_html_orden(st.session_state.ultima_orden_guardada)
 
         st.download_button(
@@ -347,12 +346,13 @@ with tab_historial:
 
 
 # -------------------------------------------------------------------------
-# === PESTAÑA 3: GESTIÓN DE PERSONAL ===
+# === PESTAÑA 3: GESTIÓN DE PERSONAL (Edición de Tabla Habilitada) ===
 # -------------------------------------------------------------------------
 with tab_personal:
     st.header("Administración de Personal y Firmantes")
-    st.info("Ingresa el Nombre, el Cargo y el Número de Identificación. El sistema los combinará.")
     
+    # 1. FORMULARIO PARA AGREGAR PERSONAL (Se mantiene igual)
+    st.info("Ingresa el Nombre, el Cargo y el Número de Identificación. El sistema los combinará.")
     with st.form("form_agregar_personal"):
         st.subheader("Agregar Nuevo Empleado/Firmante")
         
@@ -379,18 +379,65 @@ with tab_personal:
 
     st.markdown("---")
     
-    st.subheader("Directorio de Firmantes Actual")
+    # 2. DIRECTORIO ACTUAL CON EDICIÓN HABILITADA
+    st.subheader("Directorio de Firmantes Actual (Haz doble clic en una celda para editar)")
     
+    # Paso 2a: Convertir la estructura de datos anidada a un DataFrame plano y editable
     data_mostrar = []
     for rol, personas_dict in st.session_state.directorio_personal.items():
-        nombre_rol_display = rol.replace('o', 'ó').replace('e', 'é')
-        
+        # Usamos el rol sin acento como ID interno
+        nombre_rol_display = rol.replace('o', 'ó').replace('e', 'é') 
         for key, data in personas_dict.items():
             data_mostrar.append({
+                "ID_Rol": rol, # Columna oculta para referencia interna
                 "Rol de Firma": nombre_rol_display, 
                 "Nombre - Cargo": data["display"], 
                 "C.C.": data["cc"]
             })
             
     df_directorio = pd.DataFrame(data_mostrar)
-    st.dataframe(df_directorio, use_container_width=True, hide_index=True)
+    
+    # Configurar el editor de datos (solo permitimos editar las columnas visibles y relevantes)
+    edited_df = st.data_editor(
+        df_directorio,
+        column_config={
+            "ID_Rol": st.column_config.Column(disabled=True, width="small"), # Mantener columna interna inalterable
+            "Rol de Firma": st.column_config.SelectboxColumn(
+                "Rol de Firma", 
+                options=["Elaboró", "Revisó", "Aprobó"] # Opciones editables (con acento para el usuario)
+            ),
+            "Nombre - Cargo": st.column_config.Column(required=True),
+            "C.C.": st.column_config.Column(required=True, width="small")
+        },
+        hide_index=True,
+        use_container_width=True,
+        key='data_editor_directorio'
+    )
+    
+    # 3. Lógica para GUARDAR los cambios del editor de datos
+    if st.button("Guardar Cambios Editados del Directorio", type="primary"):
+        nuevo_directorio = {"Elaboro": {}, "Reviso": {}, "Aprobo": {}}
+        
+        for index, row in edited_df.iterrows():
+            # Limpiar el nombre del rol para usarlo como clave sin acento
+            rol_key = row["Rol de Firma"].replace('ó', 'o').replace('é', 'e')
+            
+            # Asegurar que la clave del rol exista
+            if rol_key not in nuevo_directorio:
+                 # Manejar el caso de un rol no válido, aunque debería ser difícil por el selectbox
+                 st.warning(f"Rol '{row['Rol de Firma']}' no válido. Omitiendo empleado.")
+                 continue
+
+            # La clave del empleado es el 'Nombre - Cargo'
+            nombre_key = row["Nombre - Cargo"]
+            
+            # Asignar los nuevos datos
+            nuevo_directorio[rol_key][nombre_key] = {
+                "display": nombre_key,
+                "cc": str(row["C.C"]) # Asegurarse de que el C.C. sea cadena
+            }
+        
+        # Actualizar el Session State
+        st.session_state.directorio_personal = nuevo_directorio
+        st.success("💾 Directorio de personal actualizado con éxito.")
+        st.experimental_rerun() # Recargar para que los cambios se reflejen inmediatamente en los selectbox
