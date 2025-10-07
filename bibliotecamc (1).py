@@ -202,9 +202,7 @@ def generar_html_orden(orden):
     
     ## CAMBIO: El enlace genera un archivo PDF al nombrarlo '.pdf', aunque usa la función de impresión de HTML.
     ## Esto es para mejorar la experiencia del usuario y que se vea el nombre de archivo sugerido.
-    return f'<a href="data:text/html;base64,{b64_html}" download="Orden_Mantenimiento_N_{orden["Número de Orden"]}.pdf" target="_blank" style="text-decoration: none; padding: 10px; background-color: #4CAF50; color: white; border-radius: 5px;">⬇️ Descargar/Abrir Orden para Imprimir a PDF</a>'
-
-
+    return f'<a href="data:text/html;base64,{b64_html}" target="_blank" style="text-decoration: none; padding: 10px; background-color: #4CAF50; color: white; border-radius: 5px;">📄 Abrir Orden para Imprimir a PDF</a>'
 # =========================================================================
 # === 3. INTERFAZ DE LA APLICACIÓN (PESTAÑAS) ===
 # =========================================================================
