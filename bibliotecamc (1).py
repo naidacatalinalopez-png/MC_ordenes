@@ -22,11 +22,7 @@ SERVICIOS_SOLICITUD = [
     "FISIOTERAPIA", "P Y P", "LABORATORIO", "GASTROENTEROLOGÍA", "OTRO"
 ]
 
-# Directorio de Trabajadores/Firmantes INICIAL
-# ## CAMBIO: La estructura de los datos del personal cambia a un diccionario
-# ## CAMBIO: El valor será ahora un diccionario con 'display' y 'cc'
-# {Rol: {Nombre_Profesion: {"display": "Nombre - Profesión", "cc": "123456"}}}
-
+# Directorio de Trabajadores/Firmantes INICIAL (Estructura: {Rol: {Nombre_Profesion: {"display": "Nombre - Profesión", "cc": "123456"}}})
 DIRECTORIO_TRABAJADORES_INICIAL = {
     "Elaboro": {
         "Magaly Gómez - Técnica": {"display": "Magaly Gómez - Técnica", "cc": "111111"},
@@ -73,7 +69,6 @@ def guardar_orden(nueva_orden):
 def convert_df_to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-## CAMBIO: Se modifica la función para recibir el 'cc' y guardarlo en el diccionario anidado.
 def agregar_personal(rol, nombre, profesion, cc):
     nombre_key = f"{nombre} - {profesion}"
     if nombre_key and rol:
@@ -86,15 +81,13 @@ def agregar_personal(rol, nombre, profesion, cc):
         else:
             st.warning(f"⚠️ **{nombre_key}** ya existe en la lista de **{rol}**.")
 
-## CAMBIO: Se modifica la función para incluir el C.C. en el HTML.
+## MODIFICACIÓN CLAVE: Esta función ahora solo devuelve la cadena HTML.
 def generar_html_orden(orden):
     """Genera una página HTML estructurada para la impresión a PDF, incluyendo el logo."""
     
     # Función de ayuda para buscar el CC del firmante.
     def get_cc(rol, display_name):
-        # Usamos .get(rol, {}) para prevenir KeyError
         directorio = st.session_state.directorio_personal.get(rol, {})
-        # Buscamos la clave (nombre - profesión) que coincide con el 'display_name' guardado
         for key, value in directorio.items():
             if value.get("display") == display_name:
                 return value.get("cc", "N/A")
@@ -105,7 +98,6 @@ def generar_html_orden(orden):
     try:
         if orden['Materiales Solicitados']:
             for item_full in orden['Materiales Solicitados'].split('; '):
-                # El formato esperado es "1. Item (Cantidad Unidad)"
                 parts = item_full.strip().split(' (', 1)
                 nombre_material = parts[0].split('. ', 1)[-1].strip()
                 cantidad_unidad = parts[1].replace(')', '') if len(parts) > 1 else 'N/A'
@@ -113,16 +105,14 @@ def generar_html_orden(orden):
         else:
             materiales_html = "<tr><td colspan='3'>No se solicitaron materiales.</td></tr>"
             
-    except Exception as e:
-        # En caso de error, al menos muestra el error para depuración si la página llega a abrir
-        materiales_html = f"<tr><td colspan='3'>Error al cargar detalles de materiales: {str(e)}</td></tr>"
+    except Exception:
+        materiales_html = "<tr><td colspan='3'>Error al cargar detalles de materiales.</td></tr>"
 
     # --- Obtener C.C. del personal de firma ---
     elaboro_cc = get_cc("Elaboro", orden['Elaboró'])
     reviso_cc = get_cc("Reviso", orden['Revisó'])
     aprobo_cc = get_cc("Aprobo", orden['Aprobó'])
     
-    # Se utiliza una sola cadena de estilo para asegurar la coherencia del HTML
     style_content = """
         body { font-family: Arial, sans-serif; font-size: 10pt; padding: 20px; }
         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }
@@ -201,11 +191,8 @@ def generar_html_orden(orden):
     </body>
     </html>
     """
-    # Codificar el HTML
-    b64_html = base64.b64encode(html_content.encode('utf-8')).decode()
-    
-    # Enlace de apertura: ya sin 'download'
-    return f'<a href="data:text/html;base64,{b64_html}" target="_blank" style="text-decoration: none; padding: 10px; background-color: #4CAF50; color: white; border-radius: 5px;">📄 Abrir Orden para Imprimir a PDF</a>'
+    return html_content
+
 # =========================================================================
 # === 3. INTERFAZ DE LA APLICACIÓN (PESTAÑAS) ===
 # =========================================================================
@@ -251,7 +238,6 @@ with tab_orden:
         # --- Campo de Responsable (Flexible) ---
         st.markdown("### Responsable Designado")
         
-        ## CAMBIO: Obtener solo el valor 'display' (Nombre - Profesión) para la selección
         opciones_elaboro = [data["display"] for data in st.session_state.directorio_personal["Elaboro"].values()]
         opciones_reviso = [data["display"] for data in st.session_state.directorio_personal["Reviso"].values()]
         opciones_responsable = opciones_elaboro + opciones_reviso
@@ -283,7 +269,6 @@ with tab_orden:
         # --- Firmas/Roles de Flujo ---
         st.subheader("Personal de Flujo y Firmas")
         
-        ## CAMBIO: Obtener solo el valor 'display' para los selectbox
         opciones_aprobo = [data["display"] for data in st.session_state.directorio_personal["Aprobo"].values()]
         
         col_e, col_r, col_a = st.columns(3)
@@ -320,16 +305,22 @@ with tab_orden:
                 st.session_state.ultima_orden_guardada = nueva_orden
                 orden_guardada_recientemente = True
 
-    # Botón para descargar/imprimir la última orden guardada
+    # Botón para descargar/imprimir la última orden guardada (Opción 2)
     if st.session_state.get('ultima_orden_guardada') and orden_guardada_recientemente:
         st.markdown("---")
-        st.subheader(f"Orden #{st.session_state.ultima_orden_guardada['Número de Orden']} lista para imprimir:")
+        st.subheader(f"Orden #{st.session_state.ultima_orden_guardada['Número de Orden']} lista para descargar:")
         
-        st.markdown(
-            generar_html_orden(st.session_state.ultima_orden_guardada), 
-            unsafe_allow_html=True
+        # Generar el HTML (solo la cadena de texto)
+        html_content = generar_html_orden(st.session_state.ultima_orden_guardada)
+
+        st.download_button(
+            label="⬇️ Descargar Orden (Archivo HTML para Imprimir a PDF)",
+            data=html_content.encode('utf-8'),
+            file_name=f'Orden_Mantenimiento_N_{st.session_state.ultima_orden_guardada["Número de Orden"]}.html',
+            mime='text/html',
+            key='download_html_orden'
         )
-        st.info("Presiona el botón para abrir la orden en una nueva ventana. Luego usa **CTRL+P** o 'Imprimir' y selecciona **'Guardar como PDF'** en tu navegador para generar el archivo final con el logo y el C.C.")
+        st.info("💡 **Instrucción:** Descarga el archivo **HTML**, ábrelo con tu navegador (doble clic) y luego usa **CTRL+P** o 'Imprimir' para seleccionar **'Guardar como PDF'** y obtener el documento final con el logo y el C.C.")
 
 
 # -------------------------------------------------------------------------
@@ -345,7 +336,7 @@ with tab_historial:
         # Descarga (CSV)
         csv = convert_df_to_csv(df)
         st.download_button(
-            label="⬇️ Descargar Historial (CSV)",
+            label="⬇️ Descargar Historial Completo (CSV)",
             data=csv,
             file_name=f'Ordenes_Mantenimiento_{date.today().strftime("%Y%m%d")}.csv',
             mime='text/csv',
@@ -365,12 +356,12 @@ with tab_personal:
     with st.form("form_agregar_personal"):
         st.subheader("Agregar Nuevo Empleado/Firmante")
         
-        col_n, col_p, col_c = st.columns(3) ## CAMBIO: Nueva columna para C.C.
+        col_n, col_p, col_c = st.columns(3)
         with col_n:
             nombre_nuevo = st.text_input("Nombre Completo")
         with col_p:
             profesion_nueva = st.text_input("Profesión / Cargo (Ej: Técnico, Biomédico)")
-        with col_c: ## CAMBIO: Campo de entrada para C.C.
+        with col_c:
             cc_nuevo = st.text_input("Número de Identificación (C.C.)", max_chars=15)
             
         rol_a_modificar = st.selectbox(
@@ -381,7 +372,7 @@ with tab_personal:
         agregar_button = st.form_submit_button("Agregar a la Lista")
         
         if agregar_button:
-            if nombre_nuevo and profesion_nueva and cc_nuevo: ## CAMBIO: Se valida cc_nuevo
+            if nombre_nuevo and profesion_nueva and cc_nuevo:
                 agregar_personal(rol_a_modificar, nombre_nuevo, profesion_nueva, cc_nuevo)
             else:
                 st.error("Debes ingresar el Nombre, la Profesión/Cargo y el Número de Identificación.")
@@ -391,14 +382,14 @@ with tab_personal:
     st.subheader("Directorio de Firmantes Actual")
     
     data_mostrar = []
-    for rol, personas_dict in st.session_state.directorio_personal.items(): ## CAMBIO: Se itera sobre el diccionario anidado
+    for rol, personas_dict in st.session_state.directorio_personal.items():
         nombre_rol_display = rol.replace('o', 'ó').replace('e', 'é')
         
         for key, data in personas_dict.items():
             data_mostrar.append({
                 "Rol de Firma": nombre_rol_display, 
                 "Nombre - Cargo": data["display"], 
-                "C.C.": data["cc"] ## CAMBIO: Se añade el C.C. para mostrar en el directorio.
+                "C.C.": data["cc"]
             })
             
     df_directorio = pd.DataFrame(data_mostrar)
