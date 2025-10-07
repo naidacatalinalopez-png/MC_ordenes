@@ -17,7 +17,6 @@ def generar_solicitud_nro(current_num):
 # =========================================================================
 
 # URL del Logo proporcionada por el usuario
-# (Se asume que esta URL funciona o debe ser reemplazada por una base64 si se usa localmente)
 LOGO_URL = "https://yt3.googleusercontent.com/ytc/AIdro_mbSWHDUC7Kw_vwBstPvA2M0-SynIdMOdiq1oLmPP6RAGw=s900-c-k-c0x00ffffff-no-rj" 
 
 # Listas de Opciones Fijas
@@ -69,7 +68,7 @@ if 'current_orden_nro_input' not in st.session_state:
 if 'current_solicitud_nro_input' not in st.session_state:
     st.session_state.current_solicitud_nro_input = generar_solicitud_nro(st.session_state.siguiente_solicitud_numero)
 
-# Bandera de control para la descarga (CORREGIDO: debe estar en session_state)
+# Bandera de control para la descarga
 if 'mostrar_descarga_ultima_orden' not in st.session_state:
     st.session_state.mostrar_descarga_ultima_orden = False
 # ---------------------------------------------
@@ -127,7 +126,7 @@ def agregar_personal(rol, nombre, profesion, cc):
         else:
             st.warning(f"⚠️ **{nombre_key}** ya existe en la lista de **{rol}**.")
 
-# Función para generar solo el HTML (AJUSTADA A LA ESTÉTICA SOLICITADA)
+# Función para generar solo el HTML (Mantenida como se solicitó)
 def generar_html_orden(orden):
     """Genera una página HTML estructurada para la impresión a PDF, incluyendo el logo y formato institucional."""
     
@@ -442,8 +441,7 @@ with tab_orden:
                 st.error("El Número de Solicitud debe seguir el formato '09-XX'.")
                 st.stop()
                 
-           # 3. Validación de duplicados (Revisar si los números ya existen en el historial)
-            # --- LÍNEA CORREGIDA ABAJO ---
+            # 3. Validación de duplicados (Revisar si los números ya existen en el historial)
             nros_existentes = [d["Número de Orden"] for d in st.session_state.orden_data]
             solicitudes_existentes = [d["Solicitud N°"] for d in st.session_state.orden_data]
             
@@ -484,7 +482,6 @@ with tab_orden:
             st.rerun() # Reinicia la app para mostrar los nuevos consecutivos y la sección de descarga.
 
     # Botón para descargar/imprimir la última orden guardada
-    # Usamos la bandera de Session State para controlar la visibilidad
     if st.session_state.get('mostrar_descarga_ultima_orden') and st.session_state.get('ultima_orden_guardada'):
         st.markdown("---")
         st.subheader(f"Orden #{st.session_state.ultima_orden_guardada['Número de Orden']} lista para descargar:")
@@ -532,13 +529,13 @@ with tab_historial:
 
 
 # -------------------------------------------------------------------------
-# === PESTAÑA 3: GESTIÓN DE PERSONAL ===
+# === PESTAÑA 3: GESTIÓN DE PERSONAL (CON ELIMINACIÓN HABILITADA) ===
 # -------------------------------------------------------------------------
 with tab_personal:
     st.header("Administración de Personal y Firmantes")
     
     # 1. FORMULARIO PARA AGREGAR PERSONAL 
-    st.info("Ingresa el Nombre, el Cargo y el Número de Identificación. El sistema los combinará.")
+    st.info("Ingresa el Nombre, el Cargo y el Número de Identificación para añadir un nuevo firmante. Para eliminar, usa la tabla de abajo.")
     with st.form("form_agregar_personal"):
         st.subheader("Agregar Nuevo Empleado/Firmante")
         
@@ -565,37 +562,37 @@ with tab_personal:
 
     st.markdown("---")
     
-    # 2. DIRECTORIO ACTUAL CON EDICIÓN HABILITADA
-    st.subheader("Directorio de Firmantes Actual (Haz doble clic en una celda para editar)")
+    # 2. DIRECTORIO ACTUAL CON EDICIÓN Y ELIMINACIÓN HABILITADA
+    st.subheader("Directorio de Firmantes Actual (Edita o usa el icono de 'cubo de basura' para eliminar)")
     
-    # Paso 2a: Convertir la estructura de datos anidada a un DataFrame plano y editable
+    # Convertir la estructura de datos anidada a un DataFrame plano y editable
     data_mostrar = []
     for rol, personas_dict in st.session_state.directorio_personal.items():
-        # Usamos el rol sin acento como ID interno
-        nombre_rol_display = rol.replace('o', 'ó').replace('e', 'é') 
+        nombre_rol_display = rol.replace('o', 'ó').replace('e', 'e') 
         for key, data in personas_dict.items():
             data_mostrar.append({
                 "ID_Rol": rol, # Columna oculta para referencia interna
                 "Rol de Firma": nombre_rol_display, 
                 "Nombre - Cargo": data["display"], 
-                "C.C.": data["cc"]
+                "CC": data["cc"] # Usamos 'CC' sin punto para evitar el KeyError
             })
             
     df_directorio = pd.DataFrame(data_mostrar)
     
-    # Configurar el editor de datos (solo permitimos editar las columnas visibles y relevantes)
+    # Configurar el editor de datos (AHORA PERMITE ELIMINAR FILAS)
     edited_df = st.data_editor(
         df_directorio,
         column_config={
-            "ID_Rol": st.column_config.Column(disabled=True, width="small"), # Mantener columna interna inalterable
+            "ID_Rol": st.column_config.Column(disabled=True, width="small"),
             "Rol de Firma": st.column_config.SelectboxColumn(
                 "Rol de Firma", 
-                options=["Elaboró", "Revisó", "Aprobó"] # Opciones editables (con acento para el usuario)
+                options=["Elaboro", "Reviso", "Aprobo"]
             ),
             "Nombre - Cargo": st.column_config.Column(required=True),
-            "C.C.": st.column_config.Column(required=True, width="small")
+            "CC": st.column_config.Column("C.C.", required=True, width="small") # Nombre de visualización con punto, clave interna sin punto
         },
-        hide_index=True,
+        hide_index=False, # Necesario para la funcionalidad de eliminación
+        num_rows="dynamic", # Habilita la adición/eliminación de filas
         use_container_width=True,
         key='data_editor_directorio'
     )
@@ -605,25 +602,29 @@ with tab_personal:
         nuevo_directorio = {"Elaboro": {}, "Reviso": {}, "Aprobo": {}}
         
         for index, row in edited_df.iterrows():
+            
+            # El editor puede devolver NaN/None si la fila se ha añadido pero no se ha rellenado.
+            if pd.isna(row["Nombre - Cargo"]) or pd.isna(row["CC"]):
+                continue # Saltar filas incompletas o eliminadas lógicamente
+
             # Limpiar el nombre del rol para usarlo como clave sin acento
             rol_key = row["Rol de Firma"].replace('ó', 'o').replace('é', 'e')
             
-            # Asegurar que la clave del rol exista
             if rol_key not in nuevo_directorio:
                  st.warning(f"Rol '{row['Rol de Firma']}' no válido. Omitiendo empleado.")
                  continue
 
-            # La clave del empleado es el 'Nombre - Cargo'
             nombre_key = row["Nombre - Cargo"]
             
             # Asignar los nuevos datos
             nuevo_directorio[rol_key][nombre_key] = {
                 "display": nombre_key,
-                "cc": str(row["C.C"]) # Asegurarse de que el C.C. sea cadena
+                "cc": str(row["CC"]) # Acceso corregido a la columna 'CC'
             }
         
         # Actualizar el Session State
         st.session_state.directorio_personal = nuevo_directorio
         st.success("💾 Directorio de personal actualizado con éxito.")
         
+        # Reiniciar para que los selectbox en la pestaña de Órdenes se actualicen
         st.rerun()
