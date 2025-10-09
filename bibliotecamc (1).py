@@ -2,22 +2,46 @@ import streamlit as st
 import pandas as pd
 from datetime import date
 import io
-import base64
+import json
+import os # Importamos os para gestionar archivos
 
 # =========================================================================
-# === 0. FUNCIONES ESENCIALES INICIALES ===
+# === 0. FUNCIONES ESENCIALES INICIALES Y MANEJO DE ARCHIVOS ===
 # =========================================================================
+
+# Nombres de archivos para persistencia
+ORDENES_DATA_FILE = 'ordenes_data.json'
+DIRECTORIO_DATA_FILE = 'directorio_data.json'
+LOGO_URL = "https://yt3.googleusercontent.com/ytc/AIdro_mbSWHDUC7Kw_vwBstPvA2M0-SynIdMOdiq1oLmPP6RAGw=s900-c-k-c0x00ffffff-no-rj" 
 
 def generar_solicitud_nro(current_num):
     """Genera el formato de solicitud (ej. '09-11') a partir del número base."""
     return f"09-{current_num:02d}"
 
+def cargar_datos_persistentes(file_path, default_value):
+    """Carga datos desde un archivo JSON o devuelve el valor por defecto si falla."""
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, 'r') as f:
+                return json.load(f)
+        except Exception:
+            # Si hay error al leer o el archivo está corrupto, usa el valor por defecto
+            return default_value
+    return default_value
+
+def guardar_datos_persistentes(data, file_path):
+    """Guarda datos en un archivo JSON."""
+    try:
+        with open(file_path, 'w') as f:
+            json.dump(data, f, indent=4)
+        return True
+    except Exception as e:
+        st.error(f"Error al guardar los datos en {file_path}: {e}")
+        return False
+
 # =========================================================================
 # === 1. CONFIGURACIÓN Y ESTADO INICIAL ===
 # =========================================================================
-
-# URL del Logo proporcionada por el usuario
-LOGO_URL = "https://yt3.googleusercontent.com/ytc/AIdro_mbSWHDUC7Kw_vwBstPvA2M0-SynIdMOdiq1oLmPP6RAGw=s900-c-k-c0x00ffffff-no-rj" 
 
 # Listas de Opciones Fijas
 DEPENDENCIAS = ["Electrico", "Infraestructura", "Biomedico", "Otro"]
@@ -30,7 +54,7 @@ SERVICIOS_SOLICITUD = [
     "FISIOTERAPIA", "P Y P", "LABORATORIO", "GASTROENTEROLOGÍA", "OTRO"
 ]
 
-# Directorio de Trabajadores/Firmantes INICIAL
+# Directorio de Trabajadores/Firmantes INICIAL (Usado como fallback)
 DIRECTORIO_TRABAJADORES_INICIAL = {
     "Elaboro": {
         "Magaly Gómez - Técnica": {"display": "Magaly Gómez - Técnica", "cc": "111111"},
@@ -47,21 +71,30 @@ DIRECTORIO_TRABAJADORES_INICIAL = {
     }
 }
 
-# Inicializar el estado de la sesión
-if 'orden_data' not in st.session_state:
-    st.session_state.orden_data = []
+
+# --- Inicializar el estado de la sesión CARGANDO LOS DATOS ---
 
 if 'directorio_personal' not in st.session_state:
-    st.session_state.directorio_personal = DIRECTORIO_TRABAJADORES_INICIAL
+    st.session_state.directorio_personal = cargar_datos_persistentes(DIRECTORIO_DATA_FILE, DIRECTORIO_TRABAJADORES_INICIAL)
 
-# Consecutivos AUTOMÁTICOS
+if 'orden_data' not in st.session_state:
+    st.session_state.orden_data = cargar_datos_persistentes(ORDENES_DATA_FILE, [])
+
+# Determinar consecutivos a partir de los datos cargados o valores iniciales
+ult_orden = max([d['Número de Orden'] for d in st.session_state.orden_data] or [928])
+ult_solicitud_str = max([d['Solicitud N°'] for d in st.session_state.orden_data if d['Solicitud N°'].startswith('09-')] or ['09-10'])
+try:
+    ult_solicitud = int(ult_solicitud_str.split('-')[-1])
+except ValueError:
+    ult_solicitud = 10
+
 if 'siguiente_orden_numero' not in st.session_state:
-    st.session_state.siguiente_orden_numero = 929 
+    st.session_state.siguiente_orden_numero = ult_orden + 1
     
 if 'siguiente_solicitud_numero' not in st.session_state:
-    st.session_state.siguiente_solicitud_numero = 11
+    st.session_state.siguiente_solicitud_numero = ult_solicitud + 1
 
-# Variables para guardar los valores editados (se inicializan con el consecutivo)
+# Variables para guardar los valores editados
 if 'current_orden_nro_input' not in st.session_state:
     st.session_state.current_orden_nro_input = st.session_state.siguiente_orden_numero
 
@@ -79,38 +112,36 @@ if 'mostrar_descarga_ultima_orden' not in st.session_state:
 # =========================================================================
 
 def guardar_orden(nueva_orden):
-    """Guarda la orden y actualiza los CONSECUTIVOS automáticos si se usaron."""
+    """Guarda la orden, actualiza CONSECUTIVOS y GUARDA EN DISCO."""
     st.session_state.orden_data.append(nueva_orden)
     
     # Lógica para actualizar los consecutivos
     nro_orden_guardado = int(nueva_orden['Número de Orden'])
     
-    # Extraer el número de solicitud (el '11' de '09-11')
     try:
         solicitud_num_guardado = int(nueva_orden['Solicitud N°'].split('-')[-1]) 
     except ValueError:
-        solicitud_num_guardado = 0 # Fallback si el formato es incorrecto
+        solicitud_num_guardado = 0 
 
     # Actualizar la Orden N°: Si el número guardado es >= al consecutivo, avanzamos el consecutivo.
     if nro_orden_guardado >= st.session_state.siguiente_orden_numero:
         st.session_state.siguiente_orden_numero = nro_orden_guardado + 1
     
-    # Actualizar el N° de Solicitud:
     if solicitud_num_guardado >= st.session_state.siguiente_solicitud_numero:
         st.session_state.siguiente_solicitud_numero = solicitud_num_guardado + 1
         
-    # Reiniciar los inputs al nuevo consecutivo para la próxima orden
     st.session_state.current_orden_nro_input = st.session_state.siguiente_orden_numero
     st.session_state.current_solicitud_nro_input = generar_solicitud_nro(st.session_state.siguiente_solicitud_numero)
 
+    # --- PASO CRÍTICO: GUARDAR EN DISCO ---
+    guardar_datos_persistentes(st.session_state.orden_data, ORDENES_DATA_FILE)
 
-    st.success(f"✅ Orden de Mantenimiento #{nueva_orden['Número de Orden']} guardada con éxito.")
+    st.success(f"✅ Orden de Mantenimiento #{nueva_orden['Número de Orden']} guardada con éxito y **persistencia en disco**.")
 
 @st.cache_data
 def convert_df_to_excel(df):
     """Convierte un DataFrame a un archivo Excel (xlsx) en memoria."""
     output = io.BytesIO()
-    # Requiere la librería 'openpyxl' instalada en el entorno
     df.to_excel(output, index=False, sheet_name='Ordenes_Mantenimiento')
     processed_data = output.getvalue()
     return processed_data
@@ -122,11 +153,15 @@ def agregar_personal(rol, nombre, profesion, cc):
             st.session_state.directorio_personal[rol][nombre_key] = {"display": nombre_key, "cc": cc}
             sorted_keys = sorted(st.session_state.directorio_personal[rol].keys())
             st.session_state.directorio_personal[rol] = {k: st.session_state.directorio_personal[rol][k] for k in sorted_keys}
+            
+            # --- PASO CRÍTICO: GUARDAR DIRECTORIO EN DISCO ---
+            guardar_datos_persistentes(st.session_state.directorio_personal, DIRECTORIO_DATA_FILE)
+            
             st.success(f"➕ **{nombre_key}** (C.C. {cc}) agregado a la lista de **{rol}**.")
         else:
             st.warning(f"⚠️ **{nombre_key}** ya existe en la lista de **{rol}**.")
 
-# Función para generar solo el HTML (Mantenida como se solicitó)
+# Función para generar solo el HTML (MANTENIDA con el formato INSTITUCIONAL)
 def generar_html_orden(orden):
     """Genera una página HTML estructurada para la impresión a PDF, incluyendo el logo y formato institucional."""
     
@@ -140,34 +175,25 @@ def generar_html_orden(orden):
 
     # --- Procesamiento de Materiales ---
     materiales_html = ""
-    # El formato del material es: "1. Item (Cantidad Unidad); 2. Otro (Cantidad Unidad)"
     try:
         if orden['Materiales Solicitados']:
             items_raw = orden['Materiales Solicitados'].split('; ')
             for item_full in items_raw:
-                if not item_full: continue # Saltar si está vacío
-                
-                # Intentar parsear el formato: "1. Nombre (Cantidad Unidad)"
+                if not item_full: continue 
                 try:
-                    # Separar el número y el nombre
                     nombre_y_resto = item_full.split('. ', 1)[-1].strip()
-                    
-                    # Separar el nombre del material y la cantidad/unidad
                     parts = nombre_y_resto.rsplit(' (', 1)
                     nombre_material = parts[0].strip()
                     cantidad_unidad = parts[1].replace(')', '').strip() if len(parts) > 1 else 'N/A'
                     
-                    # Separar la cantidad de la unidad (Ej: "5 UNIDAD" -> 5 / UNIDAD)
                     cantidad_parts = cantidad_unidad.split(' ', 1)
                     cantidad = cantidad_parts[0]
                     unidad = cantidad_parts[1] if len(cantidad_parts) > 1 else 'UNIDAD'
 
                     materiales_html += f"<tr><td>{nombre_material}</td><td>{unidad}</td><td>{cantidad}</td><td></td><td></td><td></td></tr>"
                 except Exception:
-                    # Fallback si el parsing falla (pone todo en DETALLE)
                     materiales_html += f"<tr><td>{item_full}</td><td>N/A</td><td>N/A</td><td></td><td></td><td></td></tr>"
         else:
-            # Asegurar que haya 3 filas vacías si no hay materiales, para mantener la estética
             materiales_html = "".join(["<tr><td></td><td></td><td></td><td></td><td></td><td></td></tr>"] * 3)
             
     except Exception:
@@ -196,6 +222,21 @@ def generar_html_orden(orden):
         .signature-line { border-top: 1px solid #000; padding-top: 5px; margin-bottom: 5px; }
         .firma-info { font-size: 8pt; }
         .celda-vacia { height: 20px; }
+        .recepcion-box { 
+            margin-top: 10px; 
+            font-size: 9pt; 
+            border: 1px solid #000; 
+            padding: 5px;
+            /* Estilo específico para la línea de recibido */
+            display: flex;
+            justify-content: space-between;
+        }
+        .recepcion-text {
+             white-space: nowrap; 
+             overflow: hidden; 
+             text-overflow: clip;
+             flex-grow: 1;
+        }
     """
 
     html_content = f"""
@@ -301,7 +342,11 @@ def generar_html_orden(orden):
                         </td>
                     </tr>
                 </table>
-                <p style="margin-top: 10px; font-size: 9pt; border: 1px solid #000; padding: 5px;">RECIBIDO POR: ____________________________________________________________________ C.C.: _______________________________________________________________________</p>
+                
+                <div class="recepcion-box">
+                    <span style="white-space: nowrap;">RECIBIDO POR: ____________________________________________________________________</span>
+                    <span style="white-space: nowrap;">C.C.: _______________________________________________________________________</span>
+                </div>
 
             </div>
             
@@ -325,7 +370,6 @@ tab_orden, tab_historial, tab_personal = st.tabs(["📝 Nueva Orden", "📊 Hist
 # -------------------------------------------------------------------------
 with tab_orden:
     
-    # Reiniciar la bandera si no venimos de guardar una orden (evita que la sección aparezca al inicio)
     if 'ultima_orden_guardada' not in st.session_state and st.session_state.mostrar_descarga_ultima_orden:
         st.session_state.mostrar_descarga_ultima_orden = False
 
@@ -424,8 +468,6 @@ with tab_orden:
         if submit_button:
             
             # --- Validaciones ---
-            
-            # 1. Validación de Número de Orden
             try:
                 orden_nro_final = int(st.session_state.current_orden_nro_input)
                 if orden_nro_final <= 0:
@@ -435,13 +477,11 @@ with tab_orden:
                 st.error("El Número de Orden debe ser un número entero válido.")
                 st.stop()
                 
-            # 2. Validación de Solicitud N°
             solicitud_nro_final = st.session_state.current_solicitud_nro_input
             if not solicitud_nro_final.startswith('09-') or not solicitud_nro_final.split('-')[-1].isdigit():
                 st.error("El Número de Solicitud debe seguir el formato '09-XX'.")
                 st.stop()
                 
-            # 3. Validación de duplicados (Revisar si los números ya existen en el historial)
             nros_existentes = [d["Número de Orden"] for d in st.session_state.orden_data]
             solicitudes_existentes = [d["Solicitud N°"] for d in st.session_state.orden_data]
             
@@ -453,7 +493,6 @@ with tab_orden:
                  st.error(f"El Número de Solicitud **{solicitud_nro_final}** ya existe. Por favor, elige otro o revísalo.")
                  st.stop()
                  
-            # 4. Validación de contenido
             if not motivo_orden or not materiales:
                 st.error("Por favor, completa el Motivo de la Orden y al menos un ítem de Materiales (Cantidad > 0).")
                 st.stop()
@@ -475,11 +514,10 @@ with tab_orden:
             }
             guardar_orden(nueva_orden)
             
-            # PASO CLAVE: Guardamos la orden y activamos la bandera ANTES de reiniciar
             st.session_state.ultima_orden_guardada = nueva_orden
             st.session_state.mostrar_descarga_ultima_orden = True
             
-            st.rerun() # Reinicia la app para mostrar los nuevos consecutivos y la sección de descarga.
+            st.rerun() 
 
     # Botón para descargar/imprimir la última orden guardada
     if st.session_state.get('mostrar_descarga_ultima_orden') and st.session_state.get('ultima_orden_guardada'):
@@ -497,7 +535,6 @@ with tab_orden:
         )
         st.info("💡 **Instrucción:** Descarga el archivo **HTML**, ábrelo con tu navegador (doble clic) y luego usa **CTRL+P** o 'Imprimir' para seleccionar **'Guardar como PDF'** y obtener el documento final con el logo y el C.C.")
         
-        # Botón para borrar la sección de descarga y limpiar el estado
         if st.button("Crear una Nueva Orden (Limpiar sección de descarga)"):
             if 'ultima_orden_guardada' in st.session_state:
                 del st.session_state.ultima_orden_guardada
@@ -529,7 +566,7 @@ with tab_historial:
 
 
 # -------------------------------------------------------------------------
-# === PESTAÑA 3: GESTIÓN DE PERSONAL (CON ELIMINACIÓN HABILITADA) ===
+# === PESTAÑA 3: GESTIÓN DE PERSONAL ===
 # -------------------------------------------------------------------------
 with tab_personal:
     st.header("Administración de Personal y Firmantes")
@@ -565,21 +602,19 @@ with tab_personal:
     # 2. DIRECTORIO ACTUAL CON EDICIÓN Y ELIMINACIÓN HABILITADA
     st.subheader("Directorio de Firmantes Actual (Edita o usa el icono de 'cubo de basura' para eliminar)")
     
-    # Convertir la estructura de datos anidada a un DataFrame plano y editable
     data_mostrar = []
     for rol, personas_dict in st.session_state.directorio_personal.items():
         nombre_rol_display = rol.replace('o', 'ó').replace('e', 'e') 
         for key, data in personas_dict.items():
             data_mostrar.append({
-                "ID_Rol": rol, # Columna oculta para referencia interna
+                "ID_Rol": rol, 
                 "Rol de Firma": nombre_rol_display, 
                 "Nombre - Cargo": data["display"], 
-                "CC": data["cc"] # Usamos 'CC' sin punto para evitar el KeyError
+                "CC": data["cc"]
             })
             
     df_directorio = pd.DataFrame(data_mostrar)
     
-    # Configurar el editor de datos (AHORA PERMITE ELIMINAR FILAS)
     edited_df = st.data_editor(
         df_directorio,
         column_config={
@@ -589,10 +624,10 @@ with tab_personal:
                 options=["Elaboro", "Reviso", "Aprobo"]
             ),
             "Nombre - Cargo": st.column_config.Column(required=True),
-            "CC": st.column_config.Column("C.C.", required=True, width="small") # Nombre de visualización con punto, clave interna sin punto
+            "CC": st.column_config.Column("C.C.", required=True, width="small")
         },
-        hide_index=False, # Necesario para la funcionalidad de eliminación
-        num_rows="dynamic", # Habilita la adición/eliminación de filas
+        hide_index=False, 
+        num_rows="dynamic", 
         use_container_width=True,
         key='data_editor_directorio'
     )
@@ -603,11 +638,9 @@ with tab_personal:
         
         for index, row in edited_df.iterrows():
             
-            # El editor puede devolver NaN/None si la fila se ha añadido pero no se ha rellenado.
             if pd.isna(row["Nombre - Cargo"]) or pd.isna(row["CC"]):
-                continue # Saltar filas incompletas o eliminadas lógicamente
+                continue 
 
-            # Limpiar el nombre del rol para usarlo como clave sin acento
             rol_key = row["Rol de Firma"].replace('ó', 'o').replace('é', 'e')
             
             if rol_key not in nuevo_directorio:
@@ -616,15 +649,15 @@ with tab_personal:
 
             nombre_key = row["Nombre - Cargo"]
             
-            # Asignar los nuevos datos
             nuevo_directorio[rol_key][nombre_key] = {
                 "display": nombre_key,
-                "cc": str(row["CC"]) # Acceso corregido a la columna 'CC'
+                "cc": str(row["CC"]) 
             }
         
-        # Actualizar el Session State
         st.session_state.directorio_personal = nuevo_directorio
-        st.success("💾 Directorio de personal actualizado con éxito.")
         
-        # Reiniciar para que los selectbox en la pestaña de Órdenes se actualicen
+        # --- PASO CRÍTICO: GUARDAR DIRECTORIO EN DISCO ---
+        guardar_datos_persistentes(st.session_state.directorio_personal, DIRECTORIO_DATA_FILE)
+        
+        st.success("💾 Directorio de personal actualizado y guardado con éxito.")
         st.rerun()
